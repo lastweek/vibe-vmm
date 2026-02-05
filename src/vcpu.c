@@ -45,8 +45,6 @@ static void* vcpu_thread_func(void *arg)
             log_error("Failed to handle exit");
             break;
         }
-
-        vcpu->exit_count++;
     }
 
     log_debug("vCPU %d thread stopped", vcpu->index);
@@ -77,6 +75,17 @@ struct vcpu* vcpu_create(struct vm *vm, int index)
     vcpu->index = index;
     vcpu->state = VCPU_STATE_STOPPED;
     vcpu->should_stop = 0;
+
+    /* Initialize statistics counters */
+    vcpu->exit_count = 0;
+    vcpu->io_count = 0;
+    vcpu->mmio_count = 0;
+    vcpu->halt_count = 0;
+    vcpu->shutdown_count = 0;
+    vcpu->exception_count = 0;
+    vcpu->unknown_count = 0;
+    vcpu->total_run_time_us = 0;
+    vcpu->instructions_executed = 0;
 
     log_info("vCPU %d created", index);
     return vcpu;
@@ -177,6 +186,9 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
 {
     int ret;
 
+    /* Increment total exit counter */
+    vcpu->exit_count++;
+
     switch (exit->reason) {
     case HV_EXIT_HLT:
         vcpu->halt_count++;
@@ -200,6 +212,7 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
 
     case HV_EXIT_SHUTDOWN:
         log_info("vCPU %d: Shutdown (triple fault)", vcpu->index);
+        vcpu->shutdown_count++;
         vcpu->should_stop = 1;
         ret = vcpu_handle_shutdown(vcpu);
         break;
@@ -218,12 +231,14 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
 
     case HV_EXIT_EXCEPTION:
         log_warn("vCPU %d: Exception", vcpu->index);
+        vcpu->exception_count++;
         ret = -1;
         break;
 
     default:
         log_warn("vCPU %d: Unknown exit reason %d",
                  vcpu->index, exit->reason);
+        vcpu->unknown_count++;
         ret = -1;
         break;
     }
@@ -367,4 +382,60 @@ int vcpu_get_sregs(struct vcpu *vcpu, struct hv_sregs *sregs)
 int vcpu_set_sregs(struct vcpu *vcpu, const struct hv_sregs *sregs)
 {
     return hv_set_sregs(vcpu->hv_vcpu, sregs);
+}
+
+/*
+ * Print vCPU statistics
+ */
+void vcpu_print_stats(struct vcpu *vcpu)
+{
+    if (!vcpu) {
+        fprintf(stderr, "Invalid vCPU\n");
+        return;
+    }
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "╔══════════════════════════════════════════════════════════════════╗\n");
+    fprintf(stderr, "║  vCPU %d Statistics                                                 ║\n", vcpu->index);
+    fprintf(stderr, "╠══════════════════════════════════════════════════════════════════╣\n");
+    fprintf(stderr, "║  Exit Statistics:                                                   ║\n");
+    fprintf(stderr, "║    Total VM Exits:     %20llu                             ║\n", vcpu->exit_count);
+    fprintf(stderr, "║    I/O Exits:          %20llu                             ║\n", vcpu->io_count);
+    fprintf(stderr, "║    MMIO Exits:         %20llu                             ║\n", vcpu->mmio_count);
+    fprintf(stderr, "║    HLT Exits:          %20llu                             ║\n", vcpu->halt_count);
+    fprintf(stderr, "║    Shutdown Exits:     %20llu                             ║\n", vcpu->shutdown_count);
+    fprintf(stderr, "║    Exception Exits:   %20llu                             ║\n", vcpu->exception_count);
+    fprintf(stderr, "║    Unknown Exits:      %20llu                             ║\n", vcpu->unknown_count);
+    fprintf(stderr, "║                                                                     ║\n");
+    fprintf(stderr, "║  Performance Statistics:                                           ║\n");
+    fprintf(stderr, "║    Total Run Time:     %20llu microseconds            ║\n", vcpu->total_run_time_us);
+    if (vcpu->total_run_time_us > 0) {
+        uint64_t exits_per_sec = (vcpu->exit_count * 1000000ULL) / vcpu->total_run_time_us;
+        fprintf(stderr, "║    Exits/Second:       %20llu                             ║\n", exits_per_sec);
+    }
+    fprintf(stderr, "║    Instructions:       %20llu (estimated)               ║\n", vcpu->instructions_executed);
+    fprintf(stderr, "╚══════════════════════════════════════════════════════════════════╝\n");
+    fprintf(stderr, "\n");
+}
+
+/*
+ * Reset vCPU statistics
+ */
+void vcpu_reset_stats(struct vcpu *vcpu)
+{
+    if (!vcpu) {
+        return;
+    }
+
+    vcpu->exit_count = 0;
+    vcpu->io_count = 0;
+    vcpu->mmio_count = 0;
+    vcpu->halt_count = 0;
+    vcpu->shutdown_count = 0;
+    vcpu->exception_count = 0;
+    vcpu->unknown_count = 0;
+    vcpu->total_run_time_us = 0;
+    vcpu->instructions_executed = 0;
+
+    log_info("vcpu_reset_stats: vCPU %d statistics reset", vcpu->index);
 }

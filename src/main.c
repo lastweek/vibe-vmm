@@ -452,12 +452,10 @@ int main(int argc, char *argv[])
     printf("\n");
 
     /* Print statistics */
-    log_info("VM exit statistics:");
+    fprintf(stderr, "\n");
     for (i = 0; i < vm->num_vcpus; i++) {
         struct vcpu *vcpu = vm->vcpus[i];
-        log_info("  vCPU %d: exits=%ld, io=%ld, mmio=%ld, halt=%ld",
-                 vcpu->index, vcpu->exit_count, vcpu->io_count,
-                 vcpu->mmio_count, vcpu->halt_count);
+        vcpu_print_stats(vcpu);
     }
 
 cleanup:

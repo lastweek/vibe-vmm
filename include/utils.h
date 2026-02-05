@@ -61,13 +61,13 @@ extern int log_level;
 #define LOG_LEVEL_DEBUG 4
 
 #define log_error(fmt, ...)                                            \
-    do { if (log_level >= LOG_LEVEL_ERROR) fprintf(stderr, "[ERROR] " fmt "\n", ##__VA_ARGS__); } while (0)
+    do { if (log_level >= LOG_LEVEL_ERROR) fprintf(stderr, "[ERROR] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); } while (0)
 
 #define log_warn(fmt, ...)                                             \
-    do { if (log_level >= LOG_LEVEL_WARN) fprintf(stderr, "[WARN] " fmt "\n", ##__VA_ARGS__); } while (0)
+    do { if (log_level >= LOG_LEVEL_WARN) fprintf(stderr, "[WARN] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); } while (0)
 
 #define log_info(fmt, ...)                                             \
-    do { if (log_level >= LOG_LEVEL_INFO) fprintf(stderr, "[INFO] " fmt "\n", ##__VA_ARGS__); } while (0)
+    do { if (log_level >= LOG_LEVEL_INFO) fprintf(stderr, "[INFO] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); } while (0)
 
 #define log_debug(fmt, ...)                                            \
     do { if (log_level >= LOG_LEVEL_DEBUG) fprintf(stderr, "[DEBUG] %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__); } while (0)

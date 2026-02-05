@@ -28,10 +28,19 @@ struct vcpu {
     int should_stop;
 
     /* Exit statistics */
-    uint64_t exit_count;
-    uint64_t io_count;
-    uint64_t mmio_count;
-    uint64_t halt_count;
+    uint64_t exit_count;        /* Total VM exits */
+    uint64_t io_count;          /* I/O exits */
+    uint64_t mmio_count;        /* MMIO exits */
+    uint64_t halt_count;        /* HLT exits */
+    uint64_t shutdown_count;    /* Shutdown exits */
+    uint64_t exception_count;   /* Exception exits */
+    uint64_t unknown_count;     /* Unknown exits */
+
+    /* Timing statistics */
+    uint64_t total_run_time_us; /* Total run time in microseconds */
+
+    /* Instruction execution stats (estimated) */
+    uint64_t instructions_executed;
 };
 
 /* Create/destroy vCPU */
@@ -62,5 +71,9 @@ int vcpu_set_regs(struct vcpu *vcpu, const struct hv_regs *regs);
 
 int vcpu_get_sregs(struct vcpu *vcpu, struct hv_sregs *sregs);
 int vcpu_set_sregs(struct vcpu *vcpu, const struct hv_sregs *sregs);
+
+/* Statistics */
+void vcpu_print_stats(struct vcpu *vcpu);
+void vcpu_reset_stats(struct vcpu *vcpu);
 
 #endif /* VIBE_VMM_VCPU_H */
