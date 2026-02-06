@@ -13,23 +13,74 @@ enum hv_type {
     HV_TYPE_HVF_ARM64,      /* macOS HVF for ARM64 (Apple Silicon) */
 };
 
-/* VM exit reasons - Apple Hypervisor.framework */
+/*
+ * VM exit reasons
+ *
+ * This enum defines exit reasons for multiple hypervisor platforms:
+ * - KVM (Linux Kernel-based Virtual Machine)
+ * - HVF (Apple Hypervisor Framework on macOS)
+ *
+ * Exit reasons are organized by hypervisor and architecture:
+ *
+ * === KVM x86_64 Exit Reasons (Linux) ===
+ * Based on Linux kernel include/uapi/linux/kvm.h
+ *
+ * === KVM ARM64 Exit Reasons (Linux) ===
+ * Based on Linux kernel arch/arm64/include/uapi/asm/kvm.h
+ *
+ * === HVF Exit Reasons (macOS) ===
+ * Based on Apple Hypervisor.framework headers
+ */
 enum hv_exit_reason {
-    /* Common/legacy exit reasons for x86_64 */
-    HV_EXIT_UNKNOWN        = -1,
-    HV_EXIT_NONE           = 0,
-    HV_EXIT_HLT            = 1,
-    HV_EXIT_IO             = 2,
-    HV_EXIT_MMIO           = 3,
-    HV_EXIT_EXTERNAL       = 4,
-    HV_EXIT_FAIL_ENTRY     = 5,
-    HV_EXIT_SHUTDOWN       = 6,
-    HV_EXIT_INTERNAL_ERROR = 7,
-    HV_EXIT_EXCEPTION      = 8,
+    /* Common exit reasons */
+    HV_EXIT_UNKNOWN        = -1,    /* Unable to determine exit reason */
 
-    /* ARM64-specific exit reasons (Apple Silicon) */
-    HV_EXIT_CANCELED       = 10,    /* Asynchronous exit from hv_vcpus_exit() */
-    HV_EXIT_VTIMER         = 11,    /* Virtual timer activated */
+    /* KVM x86_64 exit reasons (from Linux kernel) */
+    HV_EXIT_NONE           = 0,     /* No exit reason */
+    HV_EXIT_HLT            = 1,     /* HLT instruction executed */
+    HV_EXIT_IO             = 2,     /* I/O instruction (IN/OUT) */
+    HV_EXIT_MMIO           = 3,     /* Memory-mapped I/O access */
+    HV_EXIT_EXTERNAL       = 4,     /* External interrupt (NMI/IRQ) */
+    HV_EXIT_FAIL_ENTRY     = 5,     /* Failed vCPU entry to guest mode */
+    HV_EXIT_SHUTDOWN       = 6,     /* Guest shutdown (triple fault) */
+    HV_EXIT_INTERNAL_ERROR = 7,     /* Internal hypervisor error */
+    HV_EXIT_EXCEPTION      = 8,     /* Guest exception (fault, trap, etc) */
+    HV_EXIT_IRQ_WINDOW_OPEN = 9,    /* Interrupt window opened */
+    HV_EXIT_SET_TPR        = 10,    /* TPR access (x86 task priority register) */
+    HV_EXIT_TPR_ACCESS     = 11,    /* TPR read/write below window */
+    HV_EXIT_S390_SIEIC     = 12,    /* S390 specific interception */
+    HV_EXIT_S390_RESET     = 13,    /* S390 reset request */
+    HV_EXIT_DCR            = 14,    /* DCR access (PowerPC) */
+    HV_EXIT_NMI            = 15,    /* NMI window opened */
+    HV_EXIT_OSI            = 16,    /* OSI call (PowerPC) */
+    HV_EXIT_PAPR_HCALL     = 17,    /* PAPR hypercall (PowerPC) */
+    HV_EXIT_S390_UCONTROL  = 18,    /* S390 user control */
+    HV_EXIT_WATCHDOG       = 19,    /* Watchdog timer expired */
+    HV_EXIT_S390_TSCH      = 20,    /* S390 TSCH instruction */
+    HV_EXIT_EPR            = 21,    /* External proxy reset */
+    HV_EXIT_SYSTEM_EVENT   = 22,    /* System event (reset, shutdown) */
+    HV_EXIT_S390_STSI      = 23,    /* S390 STSI instruction */
+    HV_EXIT_IOAPIC_EOI     = 24,    /* IOAPIC EOI instruction */
+    HV_EXIT_HYPERV         = 25,    /* Hyper-V specific exit */
+    HV_EXIT_ARM_NISV       = 26,    /* ARM non-ISV guest exit */
+    HV_EXIT_X86_RDMSR      = 27,    /* x86 RDMSR instruction */
+    HV_EXIT_X86_WRMSR      = 28,    /* x86 WRMSR instruction */
+    HV_EXIT_DIRTY_LOG_FULL = 29,    /* Dirty log full */
+    HV_EXIT_X86_BUS_LOCK   = 30,    /* x86 bus lock */
+    HV_EXIT_X86_HYPERCALL  = 31,    /* x86 hypercall (VMMCALL) */
+
+    /* HVF x86_64 exit reasons (Apple Intel Macs) */
+    HV_EXIT_HVF_VMX       = 50,     /* VMX exit (Intel VT-x) */
+
+    /* HVF ARM64 exit reasons (Apple Silicon) */
+    HV_EXIT_CANCELED       = 60,    /* Asynchronous exit from hv_vcpus_exit() */
+    HV_EXIT_VTIMER         = 61,    /* Virtual timer activated (inject IRQ) */
+
+    /* KVM ARM64 exit reasons (Linux ARM64) */
+    HV_EXIT_ARM_EXCEPTION  = 70,    /* ARM64 exception from lower EL */
+    HV_EXIT_ARM_TRAP       = 71,    /* ARM64 trap to higher EL */
+    HV_EXIT_ARM_MMIO       = 72,    /* ARM64 MMIO fault */
+    HV_EXIT_ARM_IRQ        = 73,    /* ARM64 external IRQ */
 };
 
 /* Forward declarations */

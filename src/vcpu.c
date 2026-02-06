@@ -183,6 +183,48 @@ int vcpu_run(struct vcpu *vcpu)
 
 /*
  * Handle VM exit
+ *
+ * This function handles all possible VM exit reasons from KVM and HVF:
+ *
+ * === Common Exit Reasons (KVM x86_64, KVM ARM64, HVF) ===
+ * - HLT: Guest executed HLT instruction (halt)
+ * - IO: I/O port access (IN/OUT instructions on x86)
+ * - MMIO: Memory-mapped I/O access
+ * - EXTERNAL: External interrupt (NMI/IRQ)
+ * - FAIL_ENTRY: Failed to enter guest mode
+ * - SHUTDOWN: Guest shutdown (triple fault on x86)
+ * - INTERNAL_ERROR: Hypervisor internal error
+ * - EXCEPTION: Guest exception (fault, trap, etc)
+ *
+ * === KVM x86_64 Specific Exit Reasons ===
+ * - IRQ_WINDOW_OPEN: Interrupt window opened
+ * - SET_TPR: TPR (Task Priority Register) access
+ * - TPR_ACCESS: TPR read/write below window
+ * - NMI: NMI window opened
+ * - SYSTEM_EVENT: System event (reset, shutdown)
+ * - X86_RDMSR: Read model-specific register
+ * - X86_WRMSR: Write model-specific register
+ * - X86_HYPERCALL: x86 hypercall (VMMCALL)
+ * - DIRTY_LOG_FULL: Dirty page log full
+ * - X86_BUS_LOCK: Bus lock detected
+ *
+ * === KVM ARM64 Specific Exit Reasons ===
+ * - ARM_EXCEPTION: Exception from lower EL
+ * - ARM_TRAP: Trap to higher EL
+ * - ARM_MMIO: MMIO fault
+ * - ARM_IRQ: External IRQ
+ *
+ * === HVF ARM64 Specific (Apple Silicon) ===
+ * - CANCELED: Async exit from hv_vcpus_exit()
+ * - VTIMER: Virtual timer activated
+ *
+ * === KVM PowerPC/S390 Specific ===
+ * (Handled generically - not fully implemented)
+ * - DCR, OSI, PAPR_HCALL, S390_* exits
+ *
+ * For more details, see:
+ * - Linux: Documentation/virtual/kvm/api.txt
+ * - macOS: Hypervisor.framework headers
  */
 int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
 {
@@ -192,6 +234,7 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
     vcpu->exit_count++;
 
     switch (exit->reason) {
+    /* Common exit reasons */
     case HV_EXIT_HLT:
         vcpu->halt_count++;
         ret = vcpu_handle_halt(vcpu);
@@ -237,7 +280,96 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
         ret = -1;
         break;
 
-    /* ARM64-specific exit reasons (Apple Silicon) */
+    /* KVM x86_64 specific exit reasons */
+    case HV_EXIT_IRQ_WINDOW_OPEN:
+        log_debug("vCPU %d: IRQ window open", vcpu->index);
+        /* Interrupt window opened - can inject IRQ now */
+        ret = 0;
+        break;
+
+    case HV_EXIT_SET_TPR:
+        log_debug("vCPU %d: TPR access", vcpu->index);
+        /* Task Priority Register access (x86 APIC) */
+        ret = 0;
+        break;
+
+    case HV_EXIT_TPR_ACCESS:
+        log_debug("vCPU %d: TPR access below window", vcpu->index);
+        /* TPR read/write below window */
+        ret = 0;
+        break;
+
+    case HV_EXIT_NMI:
+        log_debug("vCPU %d: NMI window open", vcpu->index);
+        /* NMI window opened - can inject NMI now */
+        ret = 0;
+        break;
+
+    case HV_EXIT_SYSTEM_EVENT:
+        log_info("vCPU %d: System event", vcpu->index);
+        vcpu->shutdown_count++;
+        vcpu->should_stop = 1;
+        ret = 0;
+        break;
+
+    case HV_EXIT_X86_RDMSR:
+        log_debug("vCPU %d: RDMSR instruction", vcpu->index);
+        /* Read Model-Specific Register - intercept for debugging */
+        ret = 0;
+        break;
+
+    case HV_EXIT_X86_WRMSR:
+        log_debug("vCPU %d: WRMSR instruction", vcpu->index);
+        /* Write Model-Specific Register - intercept for debugging */
+        ret = 0;
+        break;
+
+    case HV_EXIT_X86_HYPERCALL:
+        log_info("vCPU %d: x86 hypercall (VMMCALL)", vcpu->index);
+        /* Guest executed VMMCALL hypercall */
+        ret = 0;
+        break;
+
+    case HV_EXIT_DIRTY_LOG_FULL:
+        log_warn("vCPU %d: Dirty log full", vcpu->index);
+        /* Dirty page logging buffer full - need to reset */
+        ret = 0;
+        break;
+
+    case HV_EXIT_X86_BUS_LOCK:
+        log_warn("vCPU %d: Bus lock detected", vcpu->index);
+        /* Bus lock detected (for split-lock detection) */
+        ret = 0;
+        break;
+
+    /* KVM ARM64 specific exit reasons */
+    case HV_EXIT_ARM_EXCEPTION:
+        log_warn("vCPU %d: ARM64 exception from lower EL", vcpu->index);
+        vcpu->exception_count++;
+        /* Exception from lower exception level */
+        ret = -1;
+        break;
+
+    case HV_EXIT_ARM_TRAP:
+        log_debug("vCPU %d: ARM64 trap to higher EL", vcpu->index);
+        /* Trap to higher exception level (e.g., WFI, MRS, system regs) */
+        ret = 0;
+        break;
+
+    case HV_EXIT_ARM_MMIO:
+        log_debug("vCPU %d: ARM64 MMIO fault", vcpu->index);
+        vcpu->mmio_count++;
+        /* ARM64 MMIO fault - similar to HV_EXIT_MMIO */
+        ret = 0;
+        break;
+
+    case HV_EXIT_ARM_IRQ:
+        log_debug("vCPU %d: ARM64 external IRQ", vcpu->index);
+        /* External IRQ on ARM64 */
+        ret = 0;
+        break;
+
+    /* HVF ARM64 specific exit reasons (Apple Silicon) */
     case HV_EXIT_CANCELED:
         log_info("vCPU %d: Exit canceled (async request)", vcpu->index);
         vcpu->canceled_count++;
@@ -250,6 +382,26 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
         vcpu->vtimer_count++;
         /* VTimer activated - inject timer interrupt into guest */
         /* For now, just continue - proper implementation would inject IRQ */
+        ret = 0;
+        break;
+
+    /* KVM PowerPC/S390 specific (not fully implemented) */
+    case HV_EXIT_DCR:
+    case HV_EXIT_OSI:
+    case HV_EXIT_PAPR_HCALL:
+    case HV_EXIT_S390_SIEIC:
+    case HV_EXIT_S390_RESET:
+    case HV_EXIT_S390_UCONTROL:
+    case HV_EXIT_WATCHDOG:
+    case HV_EXIT_S390_TSCH:
+    case HV_EXIT_EPR:
+    case HV_EXIT_S390_STSI:
+    case HV_EXIT_IOAPIC_EOI:
+    case HV_EXIT_HYPERV:
+    case HV_EXIT_ARM_NISV:
+        log_warn("vCPU %d: Unsupported exit reason %d (architecture-specific)",
+                 vcpu->index, exit->reason);
+        vcpu->unknown_count++;
         ret = 0;
         break;
 
