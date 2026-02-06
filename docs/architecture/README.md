@@ -175,6 +175,7 @@ Clean interface over multiple hypervisors:
 ## Further Reading
 
 - [Complete Architecture Overview](overview.md) - Detailed documentation
+- [SR-IOV Device Passthrough](sriov.md) - High-performance device assignment
 - [Memory Management](memory.md) - GPA→HVA translation
 - [Device Emulation](devices.md) - Device framework
 - [ARM64 Implementation](../internals/arm64.md) - ARM64 specifics
