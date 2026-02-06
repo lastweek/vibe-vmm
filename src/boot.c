@@ -506,8 +506,17 @@ int boot_setup_raw_binary(struct vm *vm, const char *path, uint64_t entry)
     regs.rip = entry;
     regs.rflags = 0x2;
 
+#if defined(__aarch64__)
+    /* For ARM64, the vCPU hasn't been created yet (it's created in the vCPU thread).
+     * Store the initial PC value which will be applied after vCPU creation. */
+    vcpu->initial_rip = entry;
+    vcpu->has_initial_state = 1;
+    log_debug("Stored initial PC=0x%lx for ARM64 vCPU", entry);
+#else
+    /* For x86_64, set registers directly */
     hv_set_sregs(vcpu->hv_vcpu, &sregs);
     hv_set_regs(vcpu->hv_vcpu, &regs);
+#endif
 
     log_info("Loaded raw binary: %ld bytes at 0x%lx", size, entry);
     return 0;

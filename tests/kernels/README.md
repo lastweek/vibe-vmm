@@ -4,93 +4,91 @@ This directory contains ARM64 test kernels for demonstrating VMM functionality o
 
 ## Available Kernels
 
-### arm64_simple.raw
-- **Purpose**: Minimal test kernel
-- **Size**: 8 bytes
-- **Behavior**: Infinite loop of WFI (Wait For Interrupt) instructions
-- **Usage**: Basic VM execution test
-
-### arm64_test.raw
-- **Purpose**: Computation and loop test
-- **Size**: 68 bytes
+### arm64_hello.raw ⭐ **Recommended**
+- **Purpose**: Repeatedly prints "Hello World!" with delays
+- **Size**: 172 bytes
 - **Behavior**:
-  - Loads value (42), performs arithmetic (add 10, multiply by 2)
-  - Loops 5 times with WFI instructions
-  - Demonstrates VM exits and basic execution
-- **Usage**: Testing computation and controlled exits
+  - Continuously prints "Hello World!" to MMIO console
+  - Uses busy-wait delay loop (~5 seconds between prints)
+  - Never stops - runs indefinitely
+- **Usage**: Testing MMIO console output and VMM stability
+- **Example**:
+  ```bash
+  ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
+  ```
 
-### arm64_hello.raw
-- **Purpose**: Long-running timing test
-- **Size**: 164 bytes
+### arm64_minimal.raw
+- **Purpose**: Minimal MMIO test
+- **Size**: 32 bytes
 - **Behavior**:
-  - Continuously increments counter (acts as timer)
-  - Updates message count every 10,000,000 iterations
-  - Uses WFI to yield control back to host
-  - Sets memory markers for debugging:
-    - `0xDEADBEEF`: Kernel initialized
-    - `0xCAFEBABE`: In main loop
-    - `0xF00DF00D`: Message counter updated
-- **Usage**: Testing VMM stability under sustained load
-- **Note**: Demonstrates ~1 billion VM exits in 8 seconds on Apple Silicon
+  - Prints "Hi" once to MMIO console
+  - Enters WFI (Wait For Interrupt) loop
+  - Demonstrates basic MMIO write handling
+- **Usage**: Quick MMIO functionality test
+- **Example**:
+  ```bash
+  ./run.sh --binary tests/kernels/arm64_minimal.raw --entry 0x10000 --mem 128M
+  ```
+
+## Technical Details
+
+### Position-Independent Code
+All kernels use position-independent code (PIC) with `movz`/`movk` instructions:
+- **No literal pools** - works with raw binary loading at any address
+- **Direct address loading** - MMIO base address (0x90000000) loaded via immediate moves
+- **Simple relocation** - can be loaded at any 4KB-aligned address
+
+### MMIO Console Interface
+- **Base Address**: 0x90000000 (GPA)
+- **Register**: UART_TX at offset 0x00
+- **Operation**: Write byte to UART_TX to output character
+- **Output**: Appears on stdout and in `vmm_console.log`
 
 ## Building Kernels
 
-All kernels can be built using the provided build script:
+Kernels can be assembled and linked manually:
 
 ```bash
-cd tests/kernels
-./build.sh
-```
-
-Or build individually:
-
-```bash
-# Assemble ARM64 kernel
+# Assemble the kernel
 clang -arch arm64 -c arm64_hello.S -o arm64_hello.o
 
-# Extract raw binary (requires otool and Python)
-python3 extract_binary.py arm64_hello.o arm64_hello.raw
+# Disassemble to get instructions
+otool -t arm64_hello.o
+
+# Extract raw binary (requires Python script or manual conversion)
+# See build.sh for the complete build process
 ```
 
 ## Running the Kernels
 
 ```bash
-# From project root
+# Run the Hello World kernel (repeated output)
 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
-# Or directly with signed binary
-codesign --entitlements entitlements.plist --force --deep -s - bin/vibevmm
-./bin/vibevmm --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
+# Run the minimal kernel (single "Hi")
+./run.sh --binary tests/kernels/arm64_minimal.raw --entry 0x10000 --mem 128M
+
+# With console output explicitly (now auto-enabled)
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M --console
 ```
 
 ## Memory Layout
 
-Kernels are loaded at guest physical address `0x10000` by default.
+- **RAM**: 0x00000000 - 0x07FFFFFF (128 MB)
+- **MMIO Console**: 0x90000000 - 0x90000FFF (4 KB)
+- **Virtio Console**: 0x00A00000 - 0x00A00FFF (4 KB)
 
-### Known Memory Regions:
-- `0x0 - 0x7FFFFFF`: Guest RAM (128 MB default)
-- `0x9000000`: MMIO debug console
-- `0xa000000`: VirtIO console device
+Kernels can be loaded at any 4KB-aligned address within RAM (e.g., 0x1000, 0x10000).
 
-## Exit Statistics
+## Output
 
-When running ARM64 kernels, you'll see statistics like:
+MMIO console output appears in two places:
+1. **stdout** - Your terminal
+2. **vmm_console.log** - Log file in current directory
 
-```
-╔══════════════════════════════════════════════════════════════════╗
-║  vCPU 0 Statistics                                                 ║
-╠══════════════════════════════════════════════════════════════════╣
-║  Exit Statistics:                                                   ║
-║    Total VM Exits:                948925536                             ║
-║    HLT Exits:                     948925536                             ║
-╚══════════════════════════════════════════════════════════════════╝
-```
+## Debugging
 
-The high exit count demonstrates efficient VM exit handling and the WFI instruction's role in yielding control back to the hypervisor.
-
-## Future Enhancements
-
-- Implement proper MMIO exit handling to allow console output
-- Add ARM64 system register access support
-- Implement virtual timer interrupt injection
-- Add more complex test scenarios (syscalls, page faults, etc.)
+If you see "MMIO to unmapped address" errors:
+1. Check that the MMIO console device is created (should see "Created MMIO console" in logs)
+2. Verify kernel is using correct MMIO base address (0x90000000)
+3. Ensure kernel uses position-independent code (no literal pools)

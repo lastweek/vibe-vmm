@@ -74,18 +74,14 @@ cd tests/kernels && ./build.sh && cd ../..
 # Build
 make
 
-# Build test kernel
-cd tests/kernels && ./build.sh && cd ../..
-
-# Option 1: Sign and run (recommended)
+# Run test kernel - prints "Hello World!" repeatedly
 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
-# Option 2: Run with sudo
-sudo ./bin/vibevmm --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
-
-# Quick test
-./quicktest.sh
+# Or run minimal test - prints "Hi" once
+./run.sh --binary tests/kernels/arm64_minimal.raw --entry 0x10000 --mem 128M
 ```
+
+**Note**: The `--console` flag is no longer required - MMIO console is auto-enabled for ARM64 test kernels.
 
 ## Command Line Options
 

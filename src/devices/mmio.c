@@ -53,7 +53,7 @@ struct mmio_console_state {
 };
 
 /* Default MMIO console GPA */
-#define MMIO_CONSOLE_GPA  0x9000000
+#define MMIO_CONSOLE_GPA  0x90000000  /* Updated to match ARM64 test kernel address */
 #define MMIO_CONSOLE_SIZE 0x1000
 
 /*
@@ -126,12 +126,16 @@ static int mmio_console_write(struct device *dev, uint64_t offset,
     struct mmio_console_state *s = dev->data;
     uint8_t val = *(const uint8_t *)data;
 
+    log_info("MMIO console write: offset=%ld, data=0x%x (%c), size=%zu",
+             offset, val, (val >= 32 && val <= 126) ? val : '?', size);
+
     switch (offset) {
     case UART_TX:
         if (s->dlab) {
             s->dll = val;
         } else {
             /* Write character to stdout */
+            log_info("MMIO console: Writing character '%c' (0x%x) to stdout", val, val);
             putchar(val);
             fflush(stdout);
 

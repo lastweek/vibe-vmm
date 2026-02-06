@@ -23,11 +23,43 @@ static void* vcpu_thread_func(void *arg)
 
     log_debug("vCPU %d thread started", vcpu->index);
 
+    /* For Apple HVF (ARM64), the vCPU must be created in the same thread that runs it.
+     * This is because hv_vcpu_create() associates the vCPU with the current thread. */
+#if defined(__aarch64__)
+    if (!vcpu->hv_vcpu) {
+        log_debug("Creating HVF vCPU %d in thread", vcpu->index);
+        vcpu->hv_vcpu = hv_create_vcpu(vcpu->vm->hv_vm, vcpu->index);
+        if (!vcpu->hv_vcpu) {
+            log_error("Failed to create hypervisor vCPU in thread");
+            return NULL;
+        }
+
+        /* Apply initial register state if it was stored earlier */
+        if (vcpu->has_initial_state) {
+            struct hv_regs regs;
+            memset(&regs, 0, sizeof(regs));
+            regs.rip = vcpu->initial_rip;
+            regs.rflags = 0x2;  /* Standard RFLAGS value */
+
+            log_debug("Applying initial PC=0x%llx in thread", (unsigned long long)regs.rip);
+            if (hv_set_regs(vcpu->hv_vcpu, &regs) < 0) {
+                log_error("Failed to set initial registers in thread");
+                return NULL;
+            }
+        }
+    }
+#endif
+
     while (!vcpu->should_stop) {
+        log_debug("vCPU %d: About to run (iteration %ld)", vcpu->index, vcpu->exit_count);
         ret = vcpu_run(vcpu);
+        log_debug("vCPU %d: Run returned, ret=%d, errno=%d", vcpu->index, ret, errno);
+
         if (ret < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
+                log_debug("vCPU %d: Interrupted by signal", vcpu->index);
                 continue;  /* Signal interrupted */
+            }
             log_error("vCPU %d run failed", vcpu->index);
             break;
         }
@@ -40,9 +72,17 @@ static void* vcpu_thread_func(void *arg)
             break;
         }
 
+        log_debug("vCPU %d: Got exit, reason=%d", vcpu->index, exit.reason);
         ret = vcpu_handle_exit(vcpu, &exit);
         if (ret < 0) {
             log_error("Failed to handle exit");
+            break;
+        }
+
+        /* Safety: prevent infinite loop if we keep getting the same exit */
+        vcpu->exit_count++;
+        if (vcpu->exit_count > 1000) {
+            log_error("vCPU %d: Too many exits (%ld), stopping", vcpu->index, vcpu->exit_count);
             break;
         }
     }
@@ -64,17 +104,27 @@ struct vcpu* vcpu_create(struct vm *vm, int index)
         return NULL;
     }
 
+    /* For x86_64, create the vCPU now. For ARM64, the vCPU will be created
+     * in the vCPU thread because Apple HVF requires creation and execution
+     * to happen in the same thread. */
+#if defined(__x86_64__)
     vcpu->hv_vcpu = hv_create_vcpu(vm->hv_vm, index);
     if (!vcpu->hv_vcpu) {
         log_error("Failed to create hypervisor vCPU");
         free(vcpu);
         return NULL;
     }
+#else
+    /* ARM64: vCPU will be created in the thread */
+    vcpu->hv_vcpu = NULL;
+#endif
 
     vcpu->vm = vm;
     vcpu->index = index;
     vcpu->state = VCPU_STATE_STOPPED;
     vcpu->should_stop = 0;
+    vcpu->has_initial_state = 0;
+    vcpu->initial_rip = 0;
 
     /* Initialize statistics counters */
     vcpu->exit_count = 0;
@@ -138,10 +188,28 @@ int vcpu_start(struct vcpu *vcpu)
  */
 int vcpu_stop(struct vcpu *vcpu)
 {
+    log_debug("vcpu_stop() called for vCPU %d, state=%d", vcpu->index, vcpu->state);
+
     if (vcpu->state != VCPU_STATE_RUNNING)
         return 0;
 
     vcpu->should_stop = 1;
+    log_debug("Set should_stop=1 for vCPU %d", vcpu->index);
+
+#if defined(__aarch64__)
+    /* For Apple HVF on ARM64, we need to explicitly request vCPU exit
+     * to make hv_vcpu_run() return. Otherwise it will block forever. */
+    log_debug("ARM64: vcpu->hv_vcpu=%p for vCPU %d", (void*)vcpu->hv_vcpu, vcpu->index);
+    if (vcpu->hv_vcpu) {
+        log_debug("Calling hv_vcpu_exit() for vCPU %d", vcpu->index);
+        hv_vcpu_exit(vcpu->hv_vcpu);
+        log_debug("hv_vcpu_exit() returned for vCPU %d", vcpu->index);
+    } else {
+        log_warn("vCPU %d: hv_vcpu is NULL, can't request exit", vcpu->index);
+    }
+#else
+    log_debug("Not ARM64, skipping hv_vcpu_exit()");
+#endif
 
     /* Cancel and join thread */
     pthread_cancel(vcpu->thread);
@@ -275,9 +343,10 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
         break;
 
     case HV_EXIT_EXCEPTION:
-        log_warn("vCPU %d: Exception", vcpu->index);
+        log_warn("vCPU %d: Exception - stopping", vcpu->index);
         vcpu->exception_count++;
-        ret = -1;
+        vcpu->should_stop = 1;
+        ret = 0;  /* Return success to allow cleanup */
         break;
 
     /* KVM x86_64 specific exit reasons */
@@ -467,19 +536,42 @@ int vcpu_handle_mmio_exit(struct vcpu *vcpu, struct hv_mmio *mmio)
     uint64_t data = mmio->data;
     int ret;
 
+    log_info("vcpu_handle_mmio_exit: GPA=0x%lx, size=%zu, is_write=%d, data=0x%lx",
+             mmio->addr, mmio->size, mmio->is_write, mmio->data);
+
     /* Find device at this GPA */
     dev = vm_find_device_at_gpa(vm, mmio->addr);
     if (!dev) {
         log_warn("MMIO to unmapped address: 0x%lx", mmio->addr);
+        log_warn("");
+        log_warn("The guest kernel is trying to access a device at GPA 0x%lx", mmio->addr);
+        log_warn("but no device is registered at that address.");
+        log_warn("");
+        log_warn("Common causes:");
+        log_warn("  1. MMIO console device not enabled (add --console flag if needed)");
+        log_warn("  2. Kernel built for different MMIO base address");
+        log_warn("  3. Trying to access virtio device before initialization");
+        log_warn("");
+        log_warn("Expected device addresses:");
+        log_warn("  • MMIO console:    0x90000000 (UART)");
+        log_warn("  • Virtio console:  0x00a00000");
+        log_warn("  • RAM:              0x00000000 - 0x07FFFFFF (128MB)");
+        log_warn("");
         /* For reads, return zero */
         return 0;
     }
 
+    log_info("Found device '%s' at GPA 0x%lx (offset=%lu)",
+             dev->ops->name, dev->gpa_start, mmio->addr - dev->gpa_start);
+
     /* Handle device access */
     if (mmio->is_write) {
+        log_info("Calling device write handler");
         ret = dev->ops->write(dev, mmio->addr - dev->gpa_start,
                               &mmio->data, mmio->size);
+        log_info("Device write handler returned: %d", ret);
     } else {
+        log_info("Calling device read handler");
         ret = dev->ops->read(dev, mmio->addr - dev->gpa_start,
                              &data, mmio->size);
         /* For KVM, we need to write back the data */

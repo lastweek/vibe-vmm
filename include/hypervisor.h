@@ -169,6 +169,7 @@ struct hv_ops {
     struct hv_vcpu* (*create_vcpu)(struct hv_vm *vm, int index);
     void (*destroy_vcpu)(struct hv_vcpu *vcpu);
     int (*vcpu_get_fd)(struct hv_vcpu *vcpu);
+    int (*vcpu_exit)(struct hv_vcpu *vcpu);  /* Request vCPU to exit */
 
     int (*map_mem)(struct hv_vm *vm, struct hv_memory_slot *slot);
     int (*unmap_mem)(struct hv_vm *vm, uint32_t slot);
@@ -215,6 +216,9 @@ int hv_vm_get_fd(struct hv_vm *vm);
 struct hv_vcpu* hv_create_vcpu(struct hv_vm *vm, int index);
 void hv_destroy_vcpu(struct hv_vcpu *vcpu);
 int hv_vcpu_get_fd(struct hv_vcpu *vcpu);
+
+/* Request vCPU to exit (for graceful shutdown) */
+int hv_vcpu_exit(struct hv_vcpu *vcpu);
 
 /* Memory operations */
 int hv_map_mem(struct hv_vm *vm, uint32_t slot, uint64_t gpa, void *hva, uint64_t size);

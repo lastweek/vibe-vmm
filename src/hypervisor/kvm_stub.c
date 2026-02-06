@@ -35,6 +35,7 @@ static int kvm_stub_vm_get_fd(struct hv_vm *vm) { (void)vm; return -1; }
 static struct hv_vcpu* kvm_stub_create_vcpu(struct hv_vm *vm, int index) { (void)vm; (void)index; return NULL; }
 static void kvm_stub_destroy_vcpu(struct hv_vcpu *vcpu) { (void)vcpu; }
 static int kvm_stub_vcpu_get_fd(struct hv_vcpu *vcpu) { (void)vcpu; return -1; }
+static int kvm_stub_vcpu_exit(struct hv_vcpu *vcpu) { (void)vcpu; return 0; }
 static int kvm_stub_map_mem(struct hv_vm *vm, struct hv_memory_slot *slot) { (void)vm; (void)slot; return -1; }
 static int kvm_stub_unmap_mem(struct hv_vm *vm, uint32_t slot) { (void)vm; (void)slot; return 0; }
 static int kvm_stub_run(struct hv_vcpu *vcpu) { (void)vcpu; return -1; }
@@ -54,6 +55,7 @@ const struct hv_ops kvm_ops = {
     .create_vcpu = kvm_stub_create_vcpu,
     .destroy_vcpu = kvm_stub_destroy_vcpu,
     .vcpu_get_fd = kvm_stub_vcpu_get_fd,
+    .vcpu_exit = kvm_stub_vcpu_exit,
     .map_mem = kvm_stub_map_mem,
     .unmap_mem = kvm_stub_unmap_mem,
     .run = kvm_stub_run,

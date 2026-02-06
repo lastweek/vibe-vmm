@@ -40,8 +40,15 @@ echo ""
 # Run VMM
 echo "Running VMM test..."
 echo "────────────────────────────────────────────────────────────────────"
-timeout 3 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M --log 2 2>&1 | \
-    grep -E "(INFO|ERROR|✓|Signing)" | head -15 || true
+# Run in background, capture output, then kill after 3 seconds
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M --log 2 > /tmp/vibevmm_test.log 2>&1 &
+VMM_PID=$!
+sleep 3
+kill $VMM_PID 2>/dev/null || true
+wait $VMM_PID 2>/dev/null || true
+
+# Show relevant output
+cat /tmp/vibevmm_test.log | head -20
 echo "────────────────────────────────────────────────────────────────────"
 echo ""
 

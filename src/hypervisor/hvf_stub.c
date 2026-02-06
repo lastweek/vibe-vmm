@@ -35,6 +35,7 @@ static int hvf_stub_vm_get_fd(struct hv_vm *vm) { (void)vm; return -1; }
 static struct hv_vcpu* hvf_stub_create_vcpu(struct hv_vm *vm, int index) { (void)vm; (void)index; return NULL; }
 static void hvf_stub_destroy_vcpu(struct hv_vcpu *vcpu) { (void)vcpu; }
 static int hvf_stub_vcpu_get_fd(struct hv_vcpu *vcpu) { (void)vcpu; return -1; }
+static int hvf_stub_vcpu_exit(struct hv_vcpu *vcpu) { (void)vcpu; return 0; }
 static int hvf_stub_map_mem(struct hv_vm *vm, struct hv_memory_slot *slot) { (void)vm; (void)slot; return -1; }
 static int hvf_stub_unmap_mem(struct hv_vm *vm, uint32_t slot) { (void)vm; (void)slot; return 0; }
 static int hvf_stub_run(struct hv_vcpu *vcpu) { (void)vcpu; return -1; }
@@ -54,6 +55,7 @@ const struct hv_ops hvf_ops = {
     .create_vcpu = hvf_stub_create_vcpu,
     .destroy_vcpu = hvf_stub_destroy_vcpu,
     .vcpu_get_fd = hvf_stub_vcpu_get_fd,
+    .vcpu_exit = hvf_stub_vcpu_exit,
     .map_mem = hvf_stub_map_mem,
     .unmap_mem = hvf_stub_unmap_mem,
     .run = hvf_stub_run,

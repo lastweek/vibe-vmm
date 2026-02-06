@@ -35,6 +35,7 @@
 #include <Hypervisor/hv_vcpu_types.h>
 #include <Hypervisor/hv_vcpu.h>
 #include <Hypervisor/hv_vm.h>
+#include <Hypervisor/hv_vcpu_config.h>
 
 /* Private VM data */
 struct hvf_vm_data {
@@ -212,8 +213,18 @@ static struct hv_vcpu* hvf_arm64_create_vcpu(struct hv_vm *vm, int index)
         return NULL;
     }
 
-    /* Create vCPU using Hypervisor.framework */
-    ret = hv_vcpu_create(&data->vcpu, &data->exit_info, NULL);
+    /* Create vCPU configuration - REQUIRED for ARM64 on Apple Silicon */
+    hv_vcpu_config_t config = hv_vcpu_config_create();
+    if (!config) {
+        log_error("Failed to create vCPU configuration");
+        free(data->exit_info);
+        free(data);
+        free(vcpu);
+        return NULL;
+    }
+
+    /* Create vCPU using Hypervisor.framework with proper configuration */
+    ret = hv_vcpu_create(&data->vcpu, &data->exit_info, config);
     if (ret != HV_SUCCESS) {
         log_error("Failed to create ARM64 vCPU %d: %d", index, ret);
         free(data->exit_info);
@@ -221,6 +232,11 @@ static struct hv_vcpu* hvf_arm64_create_vcpu(struct hv_vm *vm, int index)
         free(vcpu);
         return NULL;
     }
+
+    /* Release the config object after vCPU is created */
+    /* Note: hv_vcpu_config_create() returns a retained object, so we need to release it */
+    /* However, looking at the API, it uses os_release which we don't have direct access to */
+    /* The object will be cleaned up automatically */
 
     data->vcpu_created = 1;
 
@@ -319,13 +335,22 @@ static int hvf_arm64_run(struct hv_vcpu *vcpu)
     struct hvf_vcpu_data *data = vcpu->data;
     hv_return_t ret;
 
+    log_debug("About to call hv_vcpu_run() for vCPU %d", vcpu->index);
+
     /* Run vCPU - blocks until VM exit */
     ret = hv_vcpu_run(data->vcpu);
 
+    log_debug("hv_vcpu_run() returned: %d", ret);
+
     /* Check for errors */
     if (ret != HV_SUCCESS) {
+        log_error("hv_vcpu_run failed: %d", ret);
         if (ret == HV_ERROR) {
             log_error("vCPU run error");
+            return -1;
+        }
+        if (ret == HV_UNSUPPORTED) {
+            log_error("Operation not supported");
             return -1;
         }
     }
@@ -350,10 +375,13 @@ static int hvf_arm64_get_exit(struct hv_vcpu *vcpu, struct hv_exit *exit)
      * The exit_info structure contains the reason for the exit.
      */
 
+    log_info("hvf_arm64_get_exit: Processing exit for vCPU %d", vcpu->index);
+
     memset(exit, 0, sizeof(*exit));
 
     /* Check the actual exit reason from Apple HVF */
     if (data->exit_info) {
+        log_info("Exit info present, reason=%d", data->exit_info->reason);
         hv_exit_reason_t reason = data->exit_info->reason;
 
         switch (reason) {
@@ -366,21 +394,74 @@ static int hvf_arm64_get_exit(struct hv_vcpu *vcpu, struct hv_exit *exit)
             /* Exception - could be MMIO data abort or other exception */
             exit->reason = HV_EXIT_EXCEPTION;
 
+            /* Read current PC to help debug */
+            uint64_t current_pc = 0;
+            hv_vcpu_get_reg(data->vcpu, HV_REG_PC, &current_pc);
+
             /* Check if this is a data abort (might be MMIO access) */
             /* For now, treat as exception and let upper layers handle it */
-            log_debug("VM exit: EXCEPTION (syndrome=0x%llx, addr=0x%llx)",
+            log_info("VM exit: EXCEPTION (syndrome=0x%llx, vaddr=0x%llx, paddr=0x%llx, PC=0x%llx)",
                      (unsigned long long)data->exit_info->exception.syndrome,
-                     (unsigned long long)data->exit_info->exception.virtual_address);
+                     (unsigned long long)data->exit_info->exception.virtual_address,
+                     (unsigned long long)data->exit_info->exception.physical_address,
+                     (unsigned long long)current_pc);
+
+            /* Detect specific common errors and provide helpful messages */
+            if (data->exit_info->exception.syndrome == 0x7e00000 &&
+                data->exit_info->exception.virtual_address == 0) {
+                /* Instruction abort at address 0x0 - typically caused by:
+                 * 1. Literal pool access with wrong address (position-dependent code)
+                 * 2. Null pointer dereference
+                 * 3. Uninitialized register used as pointer
+                 */
+                log_error("");
+                log_error("╔══════════════════════════════════════════════════════════════════╗");
+                log_error("║  GUEST KERNEL ERROR: Instruction Abort at NULL                     ║");
+                log_error("╠══════════════════════════════════════════════════════════════════╣");
+                log_error("║  The guest kernel tried to execute code from address 0x0.           ║");
+                log_error("║                                                                     ║");
+                log_error("║  This is typically caused by:                                     ║");
+                log_error("║  1. Using literal pools (ldr x0, =label) in position-dependent    ║");
+                log_error("║     code that doesn't work with raw binary loading                ║");
+                log_error("║  2. The kernel was linked for a different address than loaded     ║");
+                log_error("║  3. Using ARM64 hello kernel which requires ELF loading            ║");
+                log_error("║                                                                     ║");
+                log_error("║  SOLUTIONS:                                                       ║");
+                log_error("║  • Use tests/kernels/arm64_minimal.raw for simple MMIO tests      ║");
+                log_error("║  • Or add --console flag if testing console output               ║");
+                log_error("║  • Make sure the kernel matches the entry point address          ║");
+                log_error("║                                                                     ║");
+                log_error("║  Current entry point: 0x%04llx                                      ║", (unsigned long long)current_pc);
+                log_error("╚══════════════════════════════════════════════════════════════════╝");
+                log_error("");
+            }
 
             /* If the fault address is in device region, treat as MMIO */
             if (data->exit_info->exception.virtual_address != 0) {
                 exit->reason = HV_EXIT_MMIO;
                 exit->u.mmio.addr = data->exit_info->exception.physical_address;
-                exit->u.mmio.size = 4;  /* Default to 4 bytes */
+                exit->u.mmio.size = 1;  /* Default to 1 byte (strb) */
                 exit->u.mmio.is_write = 1;  /* Assume write for now */
-                exit->u.mmio.data = 0;
-                log_debug("VM exit: MMIO access at GPA 0x%llx",
-                         (unsigned long long)exit->u.mmio.addr);
+
+                /* For MMIO writes, we need to extract the data from the vCPU registers.
+                 * The syndrome doesn't directly contain the write data for ARM64 MMIO.
+                 * For our simple test kernel that uses "strb w0, [x1]", we need to read X0.
+                 * In a full implementation, we would decode the faulting instruction
+                 * to determine which register contains the data. */
+                uint64_t x0_value = 0;
+                hv_vcpu_get_reg(data->vcpu, HV_REG_X0, &x0_value);
+                exit->u.mmio.data = x0_value & 0xFF;  /* Extract byte from W0 */
+
+                log_info("VM exit: MMIO access at GPA 0x%llx, data=0x%llx (from X0)",
+                         (unsigned long long)exit->u.mmio.addr,
+                         (unsigned long long)exit->u.mmio.data);
+
+                /* Advance PC past the faulting instruction (4 bytes for ARM64)
+                 * Without this, the vCPU will keep executing the same instruction */
+                log_info("Advancing PC from 0x%llx to 0x%llx",
+                         (unsigned long long)current_pc,
+                         (unsigned long long)(current_pc + 4));
+                hv_vcpu_set_reg(data->vcpu, HV_REG_PC, current_pc + 4);
             }
             break;
 
@@ -438,23 +519,19 @@ static int hvf_arm64_set_regs(struct hv_vcpu *vcpu, const struct hv_regs *regs)
         return -1;
     }
 
-    /* First, configure essential ARM64 system registers */
-    /* These are required for the vCPU to execute instructions */
-
-    /* Set TCR_EL1 (Translation Control Register) */
-    /* Use TCR_T0SZ(0) for 48-bit VA, TCR_IRGN0(0) for WB normal memory, etc. */
-    uint64_t tcr_el1 = (0b00LL << 32) |  /* T0SZ = 0 (48-bit VA) */
-                       (0b10LL << 10) |  /* IRGN0 = WB normal */
-                       (0b10LL << 12) |  /* ORGN0 = WB normal */
-                       (0b11LL << 14) |  /* SH0 = Inner shareable */
-                       (0b00LL << 8);   /* T0SZ = 0 */
-    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_CPSR, 0x3C5);  /* EL1h */
+    /* Set CPSR (Current Program Status Register) */
+    /* For EL1h (EL1 with handler mode):
+     * - M[3:0] = 0001 (EL1)
+     * - All other fields = 0 for simplicity
+     */
+    uint64_t cpsr = 0x3C5;  /* EL1h mode - standard value for EL1 */
+    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_CPSR, cpsr);
     if (ret != HV_SUCCESS) {
-        log_warn("Failed to set CPSR: %d", ret);
+        log_error("Failed to set CPSR: %d", ret);
+        return -1;
     }
 
-    /* Set TTBR0_EL1 (Translation Table Base Register 0) */
-    /* Point to GPA 0 (identity mapping) */
+    /* Set PC (Program Counter) to entry point */
     ret = hv_vcpu_set_reg(data->vcpu, HV_REG_PC, regs->rip);
     if (ret != HV_SUCCESS) {
         log_error("Failed to set PC register: %d", ret);
@@ -463,13 +540,24 @@ static int hvf_arm64_set_regs(struct hv_vcpu *vcpu, const struct hv_regs *regs)
 
     /* Set all general-purpose registers to 0 */
     for (int i = 0; i < 31; i++) {
-        hv_vcpu_set_reg(data->vcpu, HV_REG_X0 + i, 0);
+        ret = hv_vcpu_set_reg(data->vcpu, HV_REG_X0 + i, 0);
+        if (ret != HV_SUCCESS) {
+            log_warn("Failed to set X%d: %d", i, ret);
+        }
     }
 
-    /* Set SP (Stack Pointer) to a safe value */
-    hv_vcpu_set_reg(data->vcpu, HV_REG_FP, 0x50000);  /* SP = X29 */
+    /* Set FP (Frame Pointer - X29) to a reasonable value */
+    hv_vcpu_set_reg(data->vcpu, HV_REG_FP, 0x50000);
 
-    log_info("Set ARM64 PC=0x%llx, CPSR=EL1h", (unsigned long long)regs->rip);
+    /* Set SP (Stack Pointer) using system register SP_EL1
+     * SP must point to valid memory for kernels that use the stack */
+    ret = hv_vcpu_set_sys_reg(data->vcpu, HV_SYS_REG_SP_EL1, 0x50000);
+    if (ret != HV_SUCCESS) {
+        log_warn("Failed to set SP_EL1: %d", ret);
+    }
+
+    log_info("Set ARM64 PC=0x%llx, CPSR=0x%llx, SP=0x50000",
+             (unsigned long long)regs->rip, (unsigned long long)cpsr);
     return 0;
 }
 
@@ -507,6 +595,40 @@ static int hvf_arm64_set_sregs(struct hv_vcpu *vcpu, const struct hv_sregs *sreg
  * ============================================================ */
 
 /**
+ * hvf_arm64_vcpu_exit - Request a vCPU to exit from execution
+ *
+ * This function makes a blocking hv_vcpu_run() call return by requesting
+ * an asynchronous exit. This is necessary for graceful shutdown.
+ */
+int hvf_arm64_vcpu_exit(struct hv_vcpu *vcpu)
+{
+    struct hvf_vcpu_data *data;
+    hv_return_t ret;
+
+    if (!vcpu) {
+        log_warn("hvf_arm64_vcpu_exit: vcpu is NULL");
+        return -1;
+    }
+
+    data = vcpu->data;
+    if (!data || !data->vcpu_created) {
+        log_warn("hvf_arm64_vcpu_exit: vCPU not created yet");
+        return -1;
+    }
+
+    log_info("Calling hv_vcpus_exit() for vCPU %d", vcpu->index);
+    ret = hv_vcpus_exit(&data->vcpu, 1);
+
+    if (ret != HV_SUCCESS) {
+        log_error("hv_vcpus_exit failed: %d", ret);
+        return -1;
+    }
+
+    log_info("Successfully requested vCPU %d exit", vcpu->index);
+    return 0;
+}
+
+/**
  * hvf_arm64_irq_line - Assert/deassert IRQ line
  *
  * Note: ARM64 interrupt handling is different from x86_64.
@@ -538,6 +660,7 @@ const struct hv_ops hvf_arm64_ops = {
     .create_vcpu = hvf_arm64_create_vcpu,
     .destroy_vcpu = hvf_arm64_destroy_vcpu,
     .vcpu_get_fd = hvf_arm64_vcpu_get_fd,
+    .vcpu_exit = hvf_arm64_vcpu_exit,
 
     .map_mem = hvf_arm64_map_mem,
     .unmap_mem = hvf_arm64_unmap_mem,

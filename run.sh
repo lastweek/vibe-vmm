@@ -1,7 +1,8 @@
 #!/bin/bash
 # run.sh - Sign and run Vibe-VMM with proper entitlements on Apple Silicon
 
-set -e
+# Don't exit on error - we need to handle signals
+# set -e
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -37,4 +38,5 @@ echo "Running Vibe-VMM..."
 echo ""
 
 # Run the VMM with provided arguments
-./bin/vibevmm "$@"
+# Use exec to replace shell process, ensuring proper signal delivery
+exec ./bin/vibevmm "$@"

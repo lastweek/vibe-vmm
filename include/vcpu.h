@@ -27,6 +27,10 @@ struct vcpu {
     pthread_t thread;
     int should_stop;
 
+    /* Initial register state (for ARM64 where vCPU is created in thread) */
+    uint64_t initial_rip;       /* Initial program counter */
+    int has_initial_state;      /* Flag indicating if initial state is set */
+
     /* Exit statistics */
     uint64_t exit_count;        /* Total VM exits */
     uint64_t io_count;          /* I/O exits */

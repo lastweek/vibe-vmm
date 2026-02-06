@@ -185,6 +185,18 @@ int hv_vcpu_get_fd(struct hv_vcpu *vcpu)
     return g_hv_ops->vcpu_get_fd(vcpu);
 }
 
+int hv_vcpu_exit(struct hv_vcpu *vcpu)
+{
+    if (!g_hv_ops)
+        return -1;
+
+    /* Only ARM64/HVF needs explicit exit request */
+    if (g_hv_ops->vcpu_exit)
+        return g_hv_ops->vcpu_exit(vcpu);
+
+    return 0;  /* No-op for backends that don't need it */
+}
+
 /*
  * Map memory into VM
  */

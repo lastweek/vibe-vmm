@@ -52,10 +52,12 @@ struct cmdline_args {
 static void signal_handler(int sig)
 {
     (void)sig;
-    log_info("Received shutdown signal");
+    log_error("SIGNAL HANDLER: Received signal %d", sig);
+    log_error("SIGNAL HANDLER: Calling vm_stop()");
     g_running = 0;
     if (g_vm)
         vm_stop(g_vm);
+    log_error("SIGNAL HANDLER: vm_stop() returned");
 }
 
 /*
@@ -330,8 +332,14 @@ int main(int argc, char *argv[])
     /* Add memory regions */
     log_info("Allocating guest memory: %ld MB", args.mem_size / (1024 * 1024));
 
-    /* Low memory (first 3.5GB) */
-    ret = vm_add_memory_region(vm, 0, args.mem_size);
+    /* Map RAM at 0x0, but cap it at 128MB to avoid MMIO regions
+     * MMIO devices are at:
+     *   - 0x9000000: MMIO console (144MB mark)
+     *   - 0xa000000: Virtio console (160MB mark)
+     * For our test kernels, 128MB is plenty and avoids the MMIO regions
+     */
+    uint64_t ram_size = (args.mem_size < 128 * 1024 * 1024) ? args.mem_size : 128 * 1024 * 1024;
+    ret = vm_add_memory_region(vm, 0, ram_size);
     if (ret < 0) {
         fprintf(stderr, "Failed to add memory region\n");
         goto cleanup;
@@ -348,12 +356,10 @@ int main(int argc, char *argv[])
     /* Register devices */
     log_info("Registering devices...");
 
-    /* MMIO debug console */
-    if (args.enable_console) {
-        dev = mmio_console_create();
-        if (dev) {
-            vm_register_device(vm, dev);
-        }
+    /* MMIO debug console - always enabled for test kernels */
+    dev = mmio_console_create();
+    if (dev) {
+        vm_register_device(vm, dev);
     }
 
     /* Virtio console */
