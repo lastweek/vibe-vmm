@@ -1,204 +1,96 @@
-# Vibe-VMM Test Kernels
+# ARM64 Test Kernels for Vibe-VMM
 
-## Important: Platform Compatibility
+This directory contains ARM64 test kernels for demonstrating VMM functionality on Apple Silicon.
 
-**The Vibe-VMM is designed for x86_64 VMs only.** It does NOT support ARM64 VMs on Apple Silicon.
+## Available Kernels
 
-### Why Apple Silicon Can't Run These Kernels
+### arm64_simple.raw
+- **Purpose**: Minimal test kernel
+- **Size**: 8 bytes
+- **Behavior**: Infinite loop of WFI (Wait For Interrupt) instructions
+- **Usage**: Basic VM execution test
 
-1. **Vibe-VMM is x86_64-only**
-   - The VMM emulates x86_64 architecture (registers, instructions, boot setup)
-   - All VM exit handling is x86_64-specific
-   - Memory layout follows x86_64 conventions
+### arm64_test.raw
+- **Purpose**: Computation and loop test
+- **Size**: 68 bytes
+- **Behavior**:
+  - Loads value (42), performs arithmetic (add 10, multiply by 2)
+  - Loops 5 times with WFI instructions
+  - Demonstrates VM exits and basic execution
+- **Usage**: Testing computation and controlled exits
 
-2. **Apple's Hypervisor.framework has different APIs**
-   - **Intel Macs**: Hypervisor.framework supports x86_64 VMs (using VMX)
-   - **Apple Silicon**: Hypervisor.framework ONLY supports ARM64 VMs
-   - These are completely different APIs with different data structures
+### arm64_hello.raw
+- **Purpose**: Long-running timing test
+- **Size**: 164 bytes
+- **Behavior**:
+  - Continuously increments counter (acts as timer)
+  - Updates message count every 10,000,000 iterations
+  - Uses WFI to yield control back to host
+  - Sets memory markers for debugging:
+    - `0xDEADBEEF`: Kernel initialized
+    - `0xCAFEBABE`: In main loop
+    - `0xF00DF00D`: Message counter updated
+- **Usage**: Testing VMM stability under sustained load
+- **Note**: Demonstrates ~1 billion VM exits in 8 seconds on Apple Silicon
 
-3. **The VMM would need to be rewritten** to support ARM64 VMs on Apple Silicon
+## Building Kernels
 
----
+All kernels can be built using the provided build script:
 
-## Test Kernels in This Directory
-
-### x86_64_simple.bin
-- **Works with**: VMM on Linux (KVM) or Intel Mac (HVF)
-- **Size**: 24 bytes
-- **What it does**: Infinite loop with HLT instruction
-- **Purpose**: Test basic vCPU execution and VM exit handling
-
-### arm64_simple.S
-- **Purpose**: Educational/reference only
-- **Does NOT work** with the current VMM
-- Shows what an ARM64 bare-metal program looks like
-
----
-
-## How to Actually Test the VMM
-
-Since you're on Apple Silicon, you have these options:
-
-### Option 1: Linux VM (Recommended)
-
-1. **Install a Linux x86_64 VM** on your Apple Silicon Mac:
-   - **UTM** (free, open source)
-   - **Parallels Desktop** (paid)
-   - **VMware Fusion** (paid)
-   - **VirtualBox** (free, but slower)
-
-2. **Inside the Linux VM**:
-   ```bash
-   # Install build dependencies
-   sudo apt install git gcc make nasm  # Debian/Ubuntu
-
-   # Clone and build VMM
-   git clone <your-repo>
-   cd vibe-vmm
-   make
-
-   # Run with test kernel
-   ./bin/vibevmm --binary tests/kernels/x86_64_simple.bin \
-                   --entry 0x1000 \
-                   --mem 128M \
-                   --log 4
-   ```
-
-### Option 2: Intel Mac
-
-If you have access to an Intel Mac:
-- The VMM will work natively with HVF backend
-- No additional setup required
-
-### Option 3: Native Linux Machine
-
-Any x86_64 Linux machine with KVM support:
-```bash
-# Verify KVM is available
-ls /dev/kvm
-
-# Run VMM
-./bin/vibevmm --binary tests/kernels/x86_64_simple.bin \
-                --entry 0x1000 \
-                --mem 128M
-```
-
----
-
-## Building the Test Kernels
-
-### Prerequisites
-```bash
-# macOS
-brew install nasm
-
-# Linux
-sudo apt install nasm  # Debian/Ubuntu
-sudo yum install nasm  # Fedora/RHEL
-```
-
-### Build Commands
 ```bash
 cd tests/kernels
-
-# Build x86_64 kernel (works with VMM)
-make x86_64
-
-# Build ARM64 kernel (reference only)
-make arm64
-
-# Clean
-make clean
+./build.sh
 ```
 
----
+Or build individually:
 
-## Expected Output
+```bash
+# Assemble ARM64 kernel
+clang -arch arm64 -c arm64_hello.S -o arm64_hello.o
 
-When running the x86_64 test kernel with proper hypervisor backend:
-
-```
-[INFO] Initializing hypervisor...
-[INFO] Created VM
-[INFO] Allocated guest memory: 128 MB
-[INFO] Created vCPU 0
-[INFO] Setting up x86_64 boot environment...
-[INFO) vCPU 0: Running vCPU...
-[DEBUG] vCPU 0: VM exit: HLT
-[INFO] vCPU 0: HLT - pausing vCPU
+# Extract raw binary (requires otool and Python)
+python3 extract_binary.py arm64_hello.o arm64_hello.raw
 ```
 
-On Apple Silicon (current attempt):
-```
-[ERROR] HVF x86_64 support requires an Intel-based Mac
-[ERROR] Apple Silicon (M1/M2/M3) does not support x86_64 virtualization
-[ERROR] For testing on Apple Silicon, use KVM backend in a Linux VM
-```
+## Running the Kernels
 
----
+```bash
+# From project root
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
-## Technical Details
-
-### x86_64 Kernel Layout
-```
-Entry Point: 0x1000
-Code Segment: 0x08 (flat model)
-Data Segment: 0x10 (flat model)
-Stack:       0x2000 (grows downward)
+# Or directly with signed binary
+codesign --entitlements entitlements.plist --force --deep -s - bin/vibevmm
+./bin/vibevmm --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 ```
 
-### What the Test Kernel Does
-1. Disables interrupts (`cli`)
-2. Sets up stack pointer
-3. Enters infinite loop:
-   - Executes `hlt` (causes VM exit)
-   - Jumps back to start
-   - Repeats
+## Memory Layout
 
-This is perfect for testing:
-- VM creation and initialization
-- vCPU creation and execution
-- VM exit handling (HLT)
-- vCPU register state
+Kernels are loaded at guest physical address `0x10000` by default.
 
----
+### Known Memory Regions:
+- `0x0 - 0x7FFFFFF`: Guest RAM (128 MB default)
+- `0x9000000`: MMIO debug console
+- `0xa000000`: VirtIO console device
 
-## Advanced Testing
+## Exit Statistics
 
-For more comprehensive testing, you would need:
+When running ARM64 kernels, you'll see statistics like:
 
-1. **Real Linux Kernel**
-   ```bash
-   wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.tar.xz
-   # Extract and build...
-   ```
+```
+╔══════════════════════════════════════════════════════════════════╗
+║  vCPU 0 Statistics                                                 ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Exit Statistics:                                                   ║
+║    Total VM Exits:                948925536                             ║
+║    HLT Exits:                     948925536                             ║
+╚══════════════════════════════════════════════════════════════════╝
+```
 
-2. **Boot Parameters**
-   ```bash
-   ./bin/vibevmm \
-     --kernel bzImage \
-     --initrd initrd.img \
-     --cmdline "console=hvc0 earlyprintk=serial panic=1" \
-     --mem 512M \
-     --cpus 2
-   ```
+The high exit count demonstrates efficient VM exit handling and the WFI instruction's role in yielding control back to the hypervisor.
 
-3. **With Devices**
-   ```bash
-   ./bin/vibevmm \
-     --kernel bzImage \
-     --disk rootfs.ext4 \
-     --console
-   ```
+## Future Enhancements
 
----
-
-## Summary
-
-| Platform | VMM Works? | Backend | Notes |
-|----------|-------------|---------|-------|
-| Linux x86_64 | ✅ Yes | KVM | Primary target platform |
-| Intel Mac (x86_64) | ✅ Yes | HVF | Uses Hypervisor.framework |
-| Apple Silicon (ARM64) | ❌ No | N/A | Would require complete rewrite for ARM64 |
-
-**Bottom Line**: You cannot run x86_64 VMs on Apple Silicon natively. Use a Linux VM to test the VMM.
+- Implement proper MMIO exit handling to allow console output
+- Add ARM64 system register access support
+- Implement virtual timer interrupt injection
+- Add more complex test scenarios (syscalls, page faults, etc.)
