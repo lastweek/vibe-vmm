@@ -106,7 +106,7 @@ $(OBJDIR)/devices/%.o: $(SRCDIR)/devices/%.c
 clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(OBJDIR) $(BINDIR)
-	rm vmm_console.log
+	rm -f vmm_console.log
 
 # Install (copy to /usr/local/bin)
 install: $(TARGET)
