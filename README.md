@@ -35,6 +35,22 @@ A minimal Virtual Machine Monitor (VMM) written in C, supporting both x86_64 and
 - ARM64 system register handling is stubbed (TODO)
 - No interrupt injection (TODO)
 
+## Documentation
+
+📚 **Comprehensive documentation is available in the [docs/](docs/) folder:**
+
+- **[Architecture Overview](docs/architecture/overview.md)** - System architecture, design, and execution workflow
+- **[API Reference](docs/api/)** - Public interfaces and data structures
+- **[User Guides](docs/guides/)** - Installation, building, and troubleshooting
+- **[Internals](docs/internals/)** - Platform-specific implementation details
+
+### Key Documentation
+
+- [System Architecture](docs/architecture/overview.md) - Complete architecture documentation with diagrams
+- [Getting Started Guide](docs/guides/getting-started.md) - Installation and first VM
+- [ARM64 Implementation](docs/internals/arm64.md) - Apple Silicon virtualization details
+- [Debugging Guide](docs/guides/debugging.md) - Common issues and solutions
+
 ## Quick Start
 
 ### Linux (x86_64)
