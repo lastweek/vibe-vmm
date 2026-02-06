@@ -83,6 +83,8 @@ struct vcpu* vcpu_create(struct vm *vm, int index)
     vcpu->halt_count = 0;
     vcpu->shutdown_count = 0;
     vcpu->exception_count = 0;
+    vcpu->canceled_count = 0;
+    vcpu->vtimer_count = 0;
     vcpu->unknown_count = 0;
     vcpu->total_run_time_us = 0;
     vcpu->instructions_executed = 0;
@@ -233,6 +235,22 @@ int vcpu_handle_exit(struct vcpu *vcpu, struct hv_exit *exit)
         log_warn("vCPU %d: Exception", vcpu->index);
         vcpu->exception_count++;
         ret = -1;
+        break;
+
+    /* ARM64-specific exit reasons (Apple Silicon) */
+    case HV_EXIT_CANCELED:
+        log_info("vCPU %d: Exit canceled (async request)", vcpu->index);
+        vcpu->canceled_count++;
+        vcpu->should_stop = 1;
+        ret = 0;
+        break;
+
+    case HV_EXIT_VTIMER:
+        log_debug("vCPU %d: Virtual timer activated", vcpu->index);
+        vcpu->vtimer_count++;
+        /* VTimer activated - inject timer interrupt into guest */
+        /* For now, just continue - proper implementation would inject IRQ */
+        ret = 0;
         break;
 
     default:
@@ -405,6 +423,8 @@ void vcpu_print_stats(struct vcpu *vcpu)
     fprintf(stderr, "║    HLT Exits:          %20llu                             ║\n", vcpu->halt_count);
     fprintf(stderr, "║    Shutdown Exits:     %20llu                             ║\n", vcpu->shutdown_count);
     fprintf(stderr, "║    Exception Exits:   %20llu                             ║\n", vcpu->exception_count);
+    fprintf(stderr, "║    Canceled Exits:     %20llu (ARM64)                   ║\n", vcpu->canceled_count);
+    fprintf(stderr, "║    VTimer Exits:       %20llu (ARM64)                   ║\n", vcpu->vtimer_count);
     fprintf(stderr, "║    Unknown Exits:      %20llu                             ║\n", vcpu->unknown_count);
     fprintf(stderr, "║                                                                     ║\n");
     fprintf(stderr, "║  Performance Statistics:                                           ║\n");
@@ -433,6 +453,8 @@ void vcpu_reset_stats(struct vcpu *vcpu)
     vcpu->halt_count = 0;
     vcpu->shutdown_count = 0;
     vcpu->exception_count = 0;
+    vcpu->canceled_count = 0;
+    vcpu->vtimer_count = 0;
     vcpu->unknown_count = 0;
     vcpu->total_run_time_us = 0;
     vcpu->instructions_executed = 0;

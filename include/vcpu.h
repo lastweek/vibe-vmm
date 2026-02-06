@@ -34,6 +34,8 @@ struct vcpu {
     uint64_t halt_count;        /* HLT exits */
     uint64_t shutdown_count;    /* Shutdown exits */
     uint64_t exception_count;   /* Exception exits */
+    uint64_t canceled_count;    /* Canceled exits (ARM64) */
+    uint64_t vtimer_count;      /* VTimer exits (ARM64) */
     uint64_t unknown_count;     /* Unknown exits */
 
     /* Timing statistics */

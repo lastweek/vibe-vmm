@@ -13,8 +13,9 @@ enum hv_type {
     HV_TYPE_HVF_ARM64,      /* macOS HVF for ARM64 (Apple Silicon) */
 };
 
-/* VM exit reasons */
+/* VM exit reasons - Apple Hypervisor.framework */
 enum hv_exit_reason {
+    /* Common/legacy exit reasons for x86_64 */
     HV_EXIT_UNKNOWN        = -1,
     HV_EXIT_NONE           = 0,
     HV_EXIT_HLT            = 1,
@@ -25,6 +26,10 @@ enum hv_exit_reason {
     HV_EXIT_SHUTDOWN       = 6,
     HV_EXIT_INTERNAL_ERROR = 7,
     HV_EXIT_EXCEPTION      = 8,
+
+    /* ARM64-specific exit reasons (Apple Silicon) */
+    HV_EXIT_CANCELED       = 10,    /* Asynchronous exit from hv_vcpus_exit() */
+    HV_EXIT_VTIMER         = 11,    /* Virtual timer activated */
 };
 
 /* Forward declarations */
