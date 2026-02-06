@@ -1,84 +1,30 @@
-// ARM64 timing test kernel
-// Demonstrates long-running execution with periodic updates
-
+// Simple ARM64 kernel that writes to MMIO console
 .text
 .global _start
 
-// Data section
-.data
-main_counter:
-    .quad 0
-message_count:
-    .quad 0
-iterations_per_msg:
-    .quad 10000000
+.equ MMIO_CONSOLE_BASE, 0x9000000
+.equ UART_TX, 0
 
-// Status markers (loaded via literal pool)
-status_ready:
-    .quad 0
-status_running:
-    .quad 0
-status_message:
-    .quad 0
+.data
+message:
+    .asciz "Hello from ARM64 VM!\r\n"
 
 .text
 _start:
-    // Initialize status markers
-    ldr     x0, =0xDEADBEEF
-    ldr     x1, =status_ready
-    str     x0, [x1]
+    // Write message to console
+    ldr     x0, =message
+    ldr     x1, =MMIO_CONSOLE_BASE
 
-    ldr     x0, =0xCAFEBABE
-    ldr     x1, =status_running
-    str     x0, [x1]
-
-    ldr     x0, =0xF00DF00D
-    ldr     x1, =status_message
-    str     x0, [x1]
-
-    // Initialize main counter to 0
-    ldr     x0, =main_counter
-    str     xzr, [x0]
-
-main_loop:
-    // Increment main counter
-    ldr     x0, =main_counter
-    ldr     x1, [x0]
-    add     x1, x1, #1
-    str     x1, [x0]
-
-    // Check if we should update message counter
-    ldr     x2, =iterations_per_msg
-    ldr     x2, [x2]
-    udiv    x3, x1, x2
+write_loop:
+    ldrb    w2, [x0], #1
+    cbz     w2, done
     
-    ldr     x4, =message_count
-    ldr     x5, [x4]
+    // Write to UART_TX
+    strb    w2, [x1, #UART_TX]
     
-    cmp     x3, x5
-    b.eq    delay
+    b       write_loop
 
-    // Update message count
-    str     x3, [x4]
-
-delay:
-    // Execute WFI to cause VM exit (yields to host)
+done:
+    // Infinite WFI loop
     wfi
-    
-    // Additional delay loop
-    mov     x0, #100
-delay_loop:
-    wfi
-    subs    x0, x0, #1
-    b.ne    delay_loop
-
-    b       main_loop
-
-// Infinite halt
-halt:
-    wfi
-    b       halt
-
-.section __TEXT,__rodata
-signature:
-    .asciz "ARM64-TIMING-TEST-01"
+    b       done

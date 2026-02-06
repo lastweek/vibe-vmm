@@ -6,3 +6,4 @@ tests/kernels/*.o
 tests/kernels/*.raw
 tests/kernels/*.bin
 .claude/
+vmm_console.log

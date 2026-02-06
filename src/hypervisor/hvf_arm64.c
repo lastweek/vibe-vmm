@@ -336,24 +336,72 @@ static int hvf_arm64_run(struct hv_vcpu *vcpu)
 /**
  * hvf_arm64_get_exit - Get information about why the vCPU exited
  *
- * For ARM64, we simplify exit handling by treating all exits as halts.
- * This is sufficient for basic testing and can be enhanced later.
+ * For ARM64, exits can be due to:
+ * - WFI instruction (treated as HLT)
+ * - Exception (data abort to unmapped MMIO)
+ * - Virtual timer
+ * - Canceled (async request)
  */
 static int hvf_arm64_get_exit(struct hv_vcpu *vcpu, struct hv_exit *exit)
 {
-    (void)vcpu;
+    struct hvf_vcpu_data *data = vcpu->data;
 
     /* For ARM64 on Apple Silicon, hv_vcpu_run() returns when the vCPU exits.
-     * For our simple test kernel, any exit means the VM ran successfully.
-     *
-     * Future enhancements could use hv_vcpu_exit_info() to get detailed
-     * exit reasons, but that requires macOS 12.0+ and additional handling.
+     * The exit_info structure contains the reason for the exit.
      */
 
     memset(exit, 0, sizeof(*exit));
-    exit->reason = HV_EXIT_HLT;
 
-    log_debug("VM exit: treating as HLT (shutdown)");
+    /* Check the actual exit reason from Apple HVF */
+    if (data->exit_info) {
+        hv_exit_reason_t reason = data->exit_info->reason;
+
+        switch (reason) {
+        case HV_EXIT_REASON_CANCELED:
+            exit->reason = HV_EXIT_CANCELED;
+            log_debug("VM exit: CANCELED (async request)");
+            break;
+
+        case HV_EXIT_REASON_EXCEPTION:
+            /* Exception - could be MMIO data abort or other exception */
+            exit->reason = HV_EXIT_EXCEPTION;
+
+            /* Check if this is a data abort (might be MMIO access) */
+            /* For now, treat as exception and let upper layers handle it */
+            log_debug("VM exit: EXCEPTION (syndrome=0x%llx, addr=0x%llx)",
+                     (unsigned long long)data->exit_info->exception.syndrome,
+                     (unsigned long long)data->exit_info->exception.virtual_address);
+
+            /* If the fault address is in device region, treat as MMIO */
+            if (data->exit_info->exception.virtual_address != 0) {
+                exit->reason = HV_EXIT_MMIO;
+                exit->u.mmio.addr = data->exit_info->exception.physical_address;
+                exit->u.mmio.size = 4;  /* Default to 4 bytes */
+                exit->u.mmio.is_write = 1;  /* Assume write for now */
+                exit->u.mmio.data = 0;
+                log_debug("VM exit: MMIO access at GPA 0x%llx",
+                         (unsigned long long)exit->u.mmio.addr);
+            }
+            break;
+
+        case HV_EXIT_REASON_VTIMER_ACTIVATED:
+            exit->reason = HV_EXIT_VTIMER;
+            log_debug("VM exit: VTIMER activated");
+            break;
+
+        case HV_EXIT_REASON_UNKNOWN:
+        default:
+            /* Unknown or WFI - treat as HLT for our simple test kernels */
+            exit->reason = HV_EXIT_HLT;
+            log_debug("VM exit: treating as HLT/WFI");
+            break;
+        }
+    } else {
+        /* No exit info - assume HLT */
+        exit->reason = HV_EXIT_HLT;
+        log_debug("VM exit: no exit info, treating as HLT");
+    }
+
     return 0;
 }
 
@@ -378,14 +426,35 @@ static int hvf_arm64_get_regs(struct hv_vcpu *vcpu, struct hv_regs *regs)
 /**
  * hvf_arm64_set_regs - Set ARM64 general-purpose registers
  *
- * Note: ARM64 registers (X0-X30, SP, PC, PSTATE) are different from x86_64.
- * This is a placeholder for future implementation.
+ * For ARM64, we primarily need to set the PC (program counter) to the entry point.
+ * Other registers can start at 0.
  */
 static int hvf_arm64_set_regs(struct hv_vcpu *vcpu, const struct hv_regs *regs)
 {
-    (void)vcpu;
-    (void)regs;
-    /* TODO: Implement ARM64 register writes using hv_vcpu_set_reg() */
+    struct hvf_vcpu_data *data = vcpu->data;
+    hv_return_t ret;
+
+    if (!data || !data->vcpu_created) {
+        return -1;
+    }
+
+    /* Set PC (Program Counter) to the entry point */
+    /* regs.rip contains the entry point address */
+    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_PC, regs->rip);
+    if (ret != HV_SUCCESS) {
+        log_error("Failed to set PC register: %d", ret);
+        return -1;
+    }
+
+    /* Set CPSR (Current Program Status Register) */
+    /* Start in EL1 (hypervisor mode) with interrupts disabled */
+    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_CPSR, 0x3C5);  /* EL1h, IRQ/FIQ masked */
+    if (ret != HV_SUCCESS) {
+        log_warn("Failed to set CPSR register: %d", ret);
+        /* Continue anyway - CPSR might not be critical */
+    }
+
+    log_debug("Set ARM64 PC=0x%llx, CPSR=0x3c5", (unsigned long long)regs->rip);
     return 0;
 }
 
@@ -413,7 +482,8 @@ static int hvf_arm64_set_sregs(struct hv_vcpu *vcpu, const struct hv_sregs *sreg
 {
     (void)vcpu;
     (void)sregs;
-    /* TODO: Implement ARM64 system register writes */
+    /* ARM64 doesn't have x86 segments - ignore */
+    log_debug("Ignoring x86 sregs for ARM64");
     return 0;
 }
 

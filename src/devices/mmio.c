@@ -49,6 +49,7 @@ struct mmio_console_state {
     uint8_t  dlm;          /* Divisor latch high */
     int      dlab;         /* Divisor latch access bit */
     int      stdin_fd;     /* stdin file descriptor */
+    FILE    *log_file;     /* Console output log file */
 };
 
 /* Default MMIO console GPA */
@@ -133,6 +134,13 @@ static int mmio_console_write(struct device *dev, uint64_t offset,
             /* Write character to stdout */
             putchar(val);
             fflush(stdout);
+
+            /* Write to log file if open */
+            if (s->log_file) {
+                fputc(val, s->log_file);
+                fflush(s->log_file);
+            }
+
             s->lsr |= UART_LSR_TEMT | UART_LSR_THRE;
         }
         break;
@@ -177,8 +185,15 @@ static void mmio_console_destroy(struct device *dev)
 {
     struct mmio_console_state *s = dev->data;
 
-    if (s && s->stdin_fd >= 0)
-        close(s->stdin_fd);
+    if (s) {
+        if (s->stdin_fd >= 0)
+            close(s->stdin_fd);
+
+        if (s->log_file) {
+            fclose(s->log_file);
+            log_info("Console log file closed");
+        }
+    }
 
     log_info("MMIO console destroyed");
 }
@@ -211,6 +226,17 @@ struct device* mmio_console_create(void)
     s->lsr = UART_LSR_TEMT | UART_LSR_THRE;  /* Transmitter empty */
     s->iir = UART_IIR_NO_INT;
     s->stdin_fd = -1;
+    s->log_file = NULL;
+
+    /* Open console log file */
+    s->log_file = fopen("vmm_console.log", "w");
+    if (s->log_file) {
+        log_info("Console log file opened: vmm_console.log");
+        fprintf(s->log_file, "=== Vibe-VMM Console Log ===\n");
+        fflush(s->log_file);
+    } else {
+        log_warn("Failed to open console log file");
+    }
 
     /* Setup stdin for non-blocking reads (optional) */
     s->stdin_fd = STDIN_FILENO;
