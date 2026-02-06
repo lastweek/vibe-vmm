@@ -426,8 +426,8 @@ static int hvf_arm64_get_regs(struct hv_vcpu *vcpu, struct hv_regs *regs)
 /**
  * hvf_arm64_set_regs - Set ARM64 general-purpose registers
  *
- * For ARM64, we primarily need to set the PC (program counter) to the entry point.
- * Other registers can start at 0.
+ * For ARM64, we need to set the PC and configure essential system registers.
+ * ARM64 requires translation table registers to be set for the vCPU to run.
  */
 static int hvf_arm64_set_regs(struct hv_vcpu *vcpu, const struct hv_regs *regs)
 {
@@ -438,23 +438,38 @@ static int hvf_arm64_set_regs(struct hv_vcpu *vcpu, const struct hv_regs *regs)
         return -1;
     }
 
-    /* Set PC (Program Counter) to the entry point */
-    /* regs.rip contains the entry point address */
+    /* First, configure essential ARM64 system registers */
+    /* These are required for the vCPU to execute instructions */
+
+    /* Set TCR_EL1 (Translation Control Register) */
+    /* Use TCR_T0SZ(0) for 48-bit VA, TCR_IRGN0(0) for WB normal memory, etc. */
+    uint64_t tcr_el1 = (0b00LL << 32) |  /* T0SZ = 0 (48-bit VA) */
+                       (0b10LL << 10) |  /* IRGN0 = WB normal */
+                       (0b10LL << 12) |  /* ORGN0 = WB normal */
+                       (0b11LL << 14) |  /* SH0 = Inner shareable */
+                       (0b00LL << 8);   /* T0SZ = 0 */
+    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_CPSR, 0x3C5);  /* EL1h */
+    if (ret != HV_SUCCESS) {
+        log_warn("Failed to set CPSR: %d", ret);
+    }
+
+    /* Set TTBR0_EL1 (Translation Table Base Register 0) */
+    /* Point to GPA 0 (identity mapping) */
     ret = hv_vcpu_set_reg(data->vcpu, HV_REG_PC, regs->rip);
     if (ret != HV_SUCCESS) {
         log_error("Failed to set PC register: %d", ret);
         return -1;
     }
 
-    /* Set CPSR (Current Program Status Register) */
-    /* Start in EL1 (hypervisor mode) with interrupts disabled */
-    ret = hv_vcpu_set_reg(data->vcpu, HV_REG_CPSR, 0x3C5);  /* EL1h, IRQ/FIQ masked */
-    if (ret != HV_SUCCESS) {
-        log_warn("Failed to set CPSR register: %d", ret);
-        /* Continue anyway - CPSR might not be critical */
+    /* Set all general-purpose registers to 0 */
+    for (int i = 0; i < 31; i++) {
+        hv_vcpu_set_reg(data->vcpu, HV_REG_X0 + i, 0);
     }
 
-    log_debug("Set ARM64 PC=0x%llx, CPSR=0x3c5", (unsigned long long)regs->rip);
+    /* Set SP (Stack Pointer) to a safe value */
+    hv_vcpu_set_reg(data->vcpu, HV_REG_FP, 0x50000);  /* SP = X29 */
+
+    log_info("Set ARM64 PC=0x%llx, CPSR=EL1h", (unsigned long long)regs->rip);
     return 0;
 }
 
