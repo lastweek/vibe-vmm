@@ -40,7 +40,7 @@ echo ""
 # Run VMM
 echo "Running VMM test..."
 echo "────────────────────────────────────────────────────────────────────"
-timeout 3 ./run.sh --binary tests/kernels/arm64_simple.raw --entry 0x1000 --mem 128M --log 2 2>&1 | \
+timeout 3 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M --log 2 2>&1 | \
     grep -E "(INFO|ERROR|✓|Signing)" | head -15 || true
 echo "────────────────────────────────────────────────────────────────────"
 echo ""
@@ -51,6 +51,9 @@ echo "╠═══════════════════════�
 echo "║  Your Vibe-VMM is working on Apple Silicon!                   ║"
 echo "║                                                                ║"
 echo "║  To run manually:                                              ║"
-echo "║    ./run.sh --binary tests/kernels/arm64_simple.raw \\          ║"
-echo "║                --entry 0x1000 --mem 128M                       ║"
+echo "║    ./run.sh --binary tests/kernels/arm64_hello.raw \\           ║"
+echo "║                --entry 0x10000 --mem 128M                      ║"
+echo "║                                                                ║"
+echo "║  Or for a quick test:                                          ║"
+echo "║    ./quicktest.sh                                              ║"
 echo "╚════════════════════════════════════════════════════════════════╝"

@@ -78,10 +78,10 @@ make
 cd tests/kernels && ./build.sh && cd ../..
 
 # Option 1: Sign and run (recommended)
-./run.sh --binary tests/kernels/arm64_simple.raw --entry 0x1000 --mem 128M
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
 # Option 2: Run with sudo
-sudo ./bin/vibevmm --binary tests/kernels/arm64_simple.raw --entry 0x1000 --mem 128M
+sudo ./bin/vibevmm --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
 # Quick test
 ./quicktest.sh
@@ -167,8 +167,11 @@ vibe-vmm/
 │   └── main.c
 ├── tests/kernels/           # Test kernels
 │   ├── build.sh            # Build script (multi-arch)
+│   ├── README.md           # Kernel documentation
 │   ├── x86_64_simple.S     # x86_64 test kernel
-│   └── arm64_simple.raw.S  # ARM64 test kernel
+│   ├── arm64_simple.raw.S  # ARM64 minimal test kernel
+│   ├── arm64_test.S        # ARM64 computation test
+│   └── arm64_hello.S       # ARM64 timing test (default)
 ├── Makefile
 ├── run.sh                  # Auto-sign and run script
 ├── quicktest.sh            # Quick test script
@@ -230,7 +233,7 @@ Guest Physical Address Space:
 ./quicktest.sh
 
 # Manual test
-./run.sh --binary tests/kernels/arm64_simple.raw --entry 0x1000 --mem 128M
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 ```
 
 ### Expected Output
@@ -241,7 +244,7 @@ Guest Physical Address Space:
 [INFO] Created ARM64 VM
 [INFO] Added memory region: GPA 0x0 -> HVA 0x...
 [INFO] Created ARM64 vCPU 0
-[INFO] Loaded raw binary: 8 bytes at 0x1000
+[INFO] Loaded raw binary: 164 bytes at 0x10000
 [INFO] VM started
 ```
 
