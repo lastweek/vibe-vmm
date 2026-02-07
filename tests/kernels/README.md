@@ -2,6 +2,8 @@
 
 This directory contains ARM64 test kernels for demonstrating VMM functionality on Apple Silicon.
 
+**Note**: This repo does not include x86_64 test binaries. On Linux or macOS Intel, provide your own kernel/initrd or build a minimal test kernel.
+
 ## Available Kernels
 
 ### arm64_hello.raw ⭐ **Recommended**
@@ -71,6 +73,8 @@ otool -t arm64_hello.o
 # With console output explicitly (now auto-enabled)
 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M --console
 ```
+
+**Apple Silicon only**: `tests/kernels/build.sh` and `./quicktest.sh` are ARM64-only.
 
 ## Memory Layout
 

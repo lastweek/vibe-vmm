@@ -15,9 +15,21 @@ Welcome to Vibe-VMM - A minimal Virtual Machine Monitor for understanding virtua
 - [Getting Started](#getting-started) - Installation and first VM
 - [API Reference](#api-reference) - Programming interfaces
 - [Platform Guides](#platform-guides) - Platform-specific setup
-- [Troubleshooting](#troubleshooting) - Common issues and solutions
+- [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
 
 ---
+
+## Where to Start
+
+If you are new to virtualization:
+- Read [The Essence of Virtualization](#essence-of-virtualization)
+- Skim [System Architecture](architecture-overview.md)
+- Run a test kernel from [Getting Started](#getting-started)
+
+If you want to contribute or extend features:
+- Read [System Architecture](architecture-overview.md) end-to-end
+- Review [SR-IOV Device Passthrough](architecture-sriov.md) if you need VFIO
+- Keep [Troubleshooting Guide](troubleshooting.md) handy while iterating
 
 ## The Essence of Virtualization
 
@@ -260,10 +272,10 @@ make
 # Run test kernel (ARM64)
 ./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
 
-# Run test kernel (x86_64)
-./bin/vibevmm --binary tests/kernels/x86_64_simple.bin --entry 0x1000 --mem 128M
+# Run a kernel (x86_64, provide your own kernel/initrd)
+./bin/vibevmm --kernel /path/to/bzImage --initrd /path/to/initrd --cmdline "console=ttyS0" --mem 512M
 
-# Quick test
+# Quick test (Apple Silicon only)
 ./quicktest.sh
 ```
 
@@ -271,7 +283,7 @@ make
 
 ```bash
 cd tests/kernels
-./build.sh
+./build.sh    # ARM64 (Apple Silicon) only
 ```
 
 ---
@@ -349,8 +361,8 @@ sudo ./bin/vibevmm \
 # Build
 make clean && make
 
-# Run
-./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
+# Run (codesign via run.sh, provide your own x86_64 kernel)
+./run.sh --kernel /path/to/bzImage --initrd /path/to/initrd --cmdline "console=ttyS0" --mem 512M
 ```
 
 **Features:** Full feature support, no VFIO
@@ -378,10 +390,14 @@ make clean && make
 - ⚠️ System register handling incomplete
 - ❌ No interrupt injection (TODO)
 - ❌ No VFIO (macOS doesn't have VFIO)
+ 
+**Note**: `./quicktest.sh` and `tests/kernels/build.sh` are Apple Silicon only.
 
 ---
 
 ## Troubleshooting
+
+For a full list of issues and fixes, see [Troubleshooting Guide](troubleshooting.md).
 
 ### Common Issues
 

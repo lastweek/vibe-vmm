@@ -41,7 +41,7 @@ Each VF appears as a separate PCI device to the guest, with direct hardware acce
 - **No macOS support** - macOS doesn't have VFIO
 - **Basic PCI emulation** - No hotplug, no reset
 - **INTx only** - MSI/MSI-X not fully implemented
-- **No documentation** - Usage guides needed
+- **Docs are Linux-focused** - Examples assume VFIO on Linux
 
 ## Implementation Guide
 

@@ -46,6 +46,13 @@ A minimal Virtual Machine Monitor (VMM) written in C, supporting both x86_64 and
 - **[Essence of Virtualization](docs/README.md)** ⭐ - Physical address interception, privileged instruction trapping, and execution context switching
 - **[System Architecture](docs/architecture-overview.md)** - Complete architecture with diagrams, execution workflow, and component details
 - **[SR-IOV Device Passthrough](docs/architecture-sriov.md)** - High-performance device assignment with VFIO
+- **[Troubleshooting](docs/troubleshooting.md)** - Common setup and runtime issues
+
+## Platform Setup
+
+- **Linux (x86_64)**: Make sure `/dev/kvm` exists and KVM is enabled in firmware. VFIO and TAP networking generally require root.
+- **macOS (Intel / Apple Silicon)**: Use `./run.sh` to codesign the binary with Hypervisor entitlements. If codesign fails, run `sudo ./bin/vibevmm ...` as a fallback.
+- **Apple Silicon tests**: `./quicktest.sh` and `tests/kernels/build.sh` are ARM64-only.
 
 ## Quick Start
 
@@ -60,12 +67,15 @@ git clone <repo>
 cd vibe-vmm
 make
 
-# Build test kernel
-cd tests/kernels && make x86_64 && cd ../..
-
 # Run
-sudo ./bin/vibevmm --binary tests/kernels/x86_64_simple.bin --entry 0x1000 --mem 128M
+sudo ./bin/vibevmm \
+  --kernel /path/to/bzImage \
+  --initrd /path/to/initrd \
+  --cmdline "console=ttyS0" \
+  --mem 512M
 ```
+
+**Note**: This repo does not include prebuilt x86_64 test binaries. Use your own kernel/initrd or build a minimal test kernel.
 
 ### macOS Intel (x86_64)
 
@@ -73,11 +83,12 @@ sudo ./bin/vibevmm --binary tests/kernels/x86_64_simple.bin --entry 0x1000 --mem
 # Build
 make
 
-# Build test kernel
-cd tests/kernels && ./build.sh && cd ../..
-
-# Run
-./bin/vibevmm --binary tests/kernels/x86_64_simple.bin --entry 0x1000 --mem 128M
+# Run (provide your own x86_64 kernel)
+./run.sh \
+  --kernel /path/to/bzImage \
+  --initrd /path/to/initrd \
+  --cmdline "console=ttyS0" \
+  --mem 512M
 ```
 
 ### macOS Apple Silicon (ARM64)
@@ -95,6 +106,20 @@ make
 
 **Note**: The `--console` flag is no longer required - MMIO console is auto-enabled for ARM64 test kernels.
 
+## Common Runs
+
+```bash
+# Apple Silicon (ARM64) raw binary
+./run.sh --binary tests/kernels/arm64_hello.raw --entry 0x10000 --mem 128M
+
+# Linux (x86_64) kernel boot (provide your own kernel/initrd)
+sudo ./bin/vibevmm \
+  --kernel /path/to/bzImage \
+  --initrd /path/to/initrd \
+  --cmdline "console=ttyS0" \
+  --mem 512M --cpus 2 --log 3
+```
+
 ## Command Line Options
 
 | Option | Description |
@@ -106,6 +131,7 @@ make
 | `--cpus <num>` | Number of vCPUs (default: 1) |
 | `--disk <path>` | Disk image for virtio-blk |
 | `--net tap=<if>` | TAP interface for virtio-net |
+| `--vfio <BDF>` | VFIO device passthrough (Linux only) |
 | `--console` | Enable MMIO debug console |
 | `--binary <path>` | Load raw binary |
 | `--entry <addr>` | Entry point for raw binary (hex) |
@@ -174,12 +200,10 @@ vibe-vmm/
 │   ├── devices.c
 │   └── main.c
 ├── tests/kernels/           # Test kernels
-│   ├── build.sh            # Build script (multi-arch)
+│   ├── build.sh            # Build script (ARM64 only)
 │   ├── README.md           # Kernel documentation
-│   ├── x86_64_simple.S     # x86_64 test kernel
-│   ├── arm64_simple.raw.S  # ARM64 minimal test kernel
-│   ├── arm64_test.S        # ARM64 computation test
-│   └── arm64_hello.S       # ARM64 timing test (default)
+│   ├── arm64_minimal.S     # ARM64 minimal test kernel
+│   └── arm64_hello.S       # ARM64 hello-world test (default)
 ├── Makefile
 ├── run.sh                  # Auto-sign and run script
 ├── quicktest.sh            # Quick test script
@@ -194,7 +218,7 @@ vibe-vmm/
 **Linux:**
 - GCC or Clang
 - Make
-- NASM (for x86_64 test kernels)
+- NASM (only if you build x86_64 test kernels)
 - KVM support in kernel
 
 **macOS:**
@@ -215,7 +239,7 @@ make release      # Optimized release build
 
 ```bash
 cd tests/kernels
-./build.sh        # Builds all applicable kernels for your platform
+./build.sh        # ARM64 (Apple Silicon) only
 ```
 
 ## Memory Layout
@@ -224,11 +248,11 @@ cd tests/kernels
 Guest Physical Address Space:
 0x00000000 - 0x0BFFFFFF  : Low RAM (up to 256MB)
 0x0C000000 - 0x0CFFFFFF  : PCI hole (not mapped)
-0x9000000                : MMIO debug console
-0xa000000                : Virtio console
-0xa001000                : Virtio block
-0xa002000                : Virtio network
-0xb000000+               : VFIO device BARs
+0x90000000               : MMIO debug console
+0x00A00000               : Virtio console
+0x00A01000               : Virtio block
+0x00A02000               : Virtio network
+0x0B000000+              : VFIO device BARs
 0x100000000+             : High RAM (above 4GB)
 ```
 
