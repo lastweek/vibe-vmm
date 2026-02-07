@@ -39,17 +39,13 @@ A minimal Virtual Machine Monitor (VMM) written in C, supporting both x86_64 and
 
 📚 **Comprehensive documentation is available in the [docs/](docs/) folder:**
 
-- **[Architecture Overview](docs/architecture/overview.md)** - System architecture, design, and execution workflow
-- **[API Reference](docs/api/)** - Public interfaces and data structures
-- **[User Guides](docs/guides/)** - Installation, building, and troubleshooting
-- **[Internals](docs/internals/)** - Platform-specific implementation details
+**Start here:** [The Essence of Virtualization](docs/README.md#essence-of-virtualization) - Fundamental principles of VMM design
 
-### Key Documentation
+### Core Documentation
 
-- [System Architecture](docs/architecture/overview.md) - Complete architecture documentation with diagrams
-- [Getting Started Guide](docs/guides/getting-started.md) - Installation and first VM
-- [ARM64 Implementation](docs/internals/arm64.md) - Apple Silicon virtualization details
-- [Debugging Guide](docs/guides/debugging.md) - Common issues and solutions
+- **[Essence of Virtualization](docs/README.md)** ⭐ - Physical address interception, privileged instruction trapping, and execution context switching
+- **[System Architecture](docs/architecture-overview.md)** - Complete architecture with diagrams, execution workflow, and component details
+- **[SR-IOV Device Passthrough](docs/architecture-sriov.md)** - High-performance device assignment with VFIO
 
 ## Quick Start
 
